@@ -28,21 +28,65 @@ def create_concept_graph_structure(param_list: list) -> dict:
     return return_dict
 
 
+def get_node_id_dict(dictionary: dict) -> dict:
+    
+    node_id_dict = {}
+    id_count = 1
+    
+    for name in dictionary.keys():
+        node_id_dict[name] = id_count
+        id_count += 1
+
+    return node_id_dict
+
+
 class LLM_Relation_Extractor:
 
     def __init__(self, textbook_link: str):
+        # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
+        '''
+        Constructor to create a large language model extractor class. 
+
+        Parameters:
+            textbook_link: The link to generate answers from
+        '''
         self.link = textbook_link
+
     
     def create_chapter_dict(self, outcomes: list, concepts: list, chapter_dict: dict) -> dict:
+        '''
+        Create a chapter dictionary containing the chapter names as keys and its learning concepts and outcomes in a tuple as the value. Concept is at index 0 and outcome is at index 1
+
+        Parameters:
+            outcomes: a list of learning outcomes created from the identify_learning_outcomes function
+            concepts: a list of learning concepts created from the identify_learning_concepts function
+            chapter_dict: a dictionary containing the chapter #'s as keys and the name as the value. Chapters must be in ascending order
+
+        Returns:
+            dict
+        '''
+
         outcome_concept_graph = {}
 
-        for chapter, chapter_name in chapter_dict.items():
-            for i in range(len(outcomes)):
-                outcome_concept_graph[chapter] = (chapter_name, concepts[i], outcomes[i])
-
+        i = 0
+        for chapter_name in chapter_dict.values():
+            outcome_concept_graph[chapter_name] = (concepts[i], outcomes[i])
+            i += 1
+                
         return outcome_concept_graph
-
+        
+    
     def identify_chapters(self) -> dict:
+        '''
+        Identify the chapters within the class provided link using a large language model
+        It is very, very inconsistent and I highly recommened manually creating the dictionary
+
+        Parameters:
+            None
+
+        Returns:
+            dict
+        '''
         # NOTE: This is very, very, inconsistent. Do not recommend using this.
 
         chapters = llm(f"Please identify the chapters in this textbook: {self.link}")
@@ -55,71 +99,155 @@ class LLM_Relation_Extractor:
 
 
     def identify_main_topics(self) -> list:
+        '''
+        Identify the main topics within the class provided link
+
+        Parameters:
+            None
+        
+        Returns:
+            list
+        '''
         main_topics = llm(f"Please identify ten main topics from this textbook: {self.link}")
         return [topic for topic in main_topics.split('\n')][2:]
+    
+    def identify_main_topic_relations(self, main_topic_list: list) -> dict:
+        '''
+        Identify the relationships between the main topics of the textbook
 
+        Parameters:
+            main_topics_list: A list of main topics from the textbook. Can be automatically created using the identify_main_topics() function
+        
+        Returns:
+            dict
+        '''
+        topic_relations = create_concept_graph_structure(main_topic_list)
 
+        relation = ''
+        for i in range(len(main_topic_list)):
+            for j in range(len(main_topic_list)):
+                if i != j:
+                    relation = llm(f"Is there a relationship between this topic: {main_topic_list[i]}, and this topic: {main_topic_list[j]}? If there is NOT, please respond with 'No' and 'No' only.")
+                    relation = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', relation)
+                    if relation.split(',')[0].strip() != 'No':
+                        topic_relations[main_topic_list[i]].append(main_topic_list[j])
+
+        return topic_relations
+
+    
     def identify_learning_outcomes(self, chapter_dict: dict) -> list:
+        '''
+        Identify the main learning outcomes within the class provided link
+
+        Parameters:
+            chapter_dict: a dictionary containing the chapter #'s as keys and the name as the value. Chapters must be in ascending order
+        
+        Returns:
+            list
+        '''
         outcome_list = []
         current_outcome = ''
 
         for chapter, chapter_name in chapter_dict.items():
             current_outcome = llm(f"Please identify the main learning outcomes given {chapter}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}")
+            current_outcome = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_outcome)
             outcome_list.append(current_outcome)
         
         return outcome_list
     
 
     def identify_learning_concepts(self, chapter_dict: dict) -> list:
+        '''
+        Identify the main learning concepts within the class provided link
+
+        Parameters:
+            chapter_dict: a dictionary containing the chapter #'s as keys and the name as the value. Chapters must be in ascending order
+        
+        Returns:
+            list
+        '''
         concept_list = []
         current_concept = ''
 
         for chapter, chapter_name in chapter_dict.items():
             current_concept = llm(f'Please identify the main learning concept given {chapter}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}')
+            current_concept = re.sub(re.compile('^[a-zA-Z\s\/.,!?]'), '', current_concept)
             concept_list.append(current_concept)
 
         return concept_list
-
+        
 
     def identify_associations(self, learning_dict: dict) -> dict:
-        chapter_names = [values[0] for values in list(learning_dict.values())]
-        association_dict = create_concept_graph_structure(param_list = chapter_names)
+        '''
+        Identify associations between chapters. For example, if there is an association between Chapter 1 and 3 it will be added to the dictionary. The return dict contains chapter names as keys and the chapter names its associated with as values
+
+        Parameters:
+            learning_dict: The dictionary returned from the create_chapter_dict() function
+
+        Returns:
+            dict
+        '''
+        association_dict = create_concept_graph_structure(param_list = list(learning_dict.keys()))
         new_association = ''
+        values = list(learning_dict.values())
+        keys = list(learning_dict.keys())
 
         # Use dictionary created from create_chapter_dict function
-        
-        for i in range(len(list(learning_dict.values()))):
-            current_tuple = list(learning_dict.values())[i]
-            for j in range(len(list(learning_dict.values()))):
-                next_tuple = list(learning_dict.values())[j]
-                new_association = llm(f"Please identify if there is an association between this concept: {current_tuple[1]}, and this other concept: {next_tuple[1]}. If there is NO association, please start your response with 'No' and 'No' only.")
+
+        # I think this algorithm is wrong? Maybe its better to loop through in reverse order (Ex. start with the last chapter and work downwards)
+        for i in range(len(values)):
+            current_tuple = values[i]
+            for j in range(i + 1, len(values)):
+                next_tuple = values[j]
+                new_association = llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
                 new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
                 # Try to only add associations to the graph, but its difficult because sometimes the LLM won't start its response with 'No'
                 if new_association.split(',')[0].strip() != 'No':
-                    association_dict[current_tuple[0]].append(next_tuple[0])
+                    association_dict[keys[i]].append(keys[j])
+
+        # Would identifying the assocations like this be better? It might be too large to be processed like this though
+        # assocation = llm(f"Given this dictionary containing chapter names and their learning concepts and outcomes, please identify the associations between chapters: {learning_dict}")
+                
         
         return association_dict
 
 
-    def dependency_relation_extraction(self, dependiences: list, relations_dict = None) -> dict:
+    def dependency_relation_extraction(self, dependencies: list) -> dict:
+        '''
+        Identify the dependency relationships between chapters, returns a dictionary where the key is a chapter name and the value is a list of chapters it depends on
+
+        Parameters: a list containing the chapter names to test which ones depend on each other
+
+        Returns:
+            dict
+        '''
         relation = ''
 
-        if relations_dict == None:
-            relations_dict = create_concept_graph_structure(dependiences)
+        relations_dict = create_concept_graph_structure(dependencies)
 
-        for i in range(len(dependiences)):
-            for j in range(len(dependiences)):
+        for i in range(len(dependencies)):
+            for j in range(len(dependencies)):
                 if i != j:
-                    relation = llm(f"Is there a dependency relationship from {dependiences[i]} to {dependiences[j]}? If there is NOT, please respond with 'No' and 'No' only.")
+                    # NOTE: Should this be modified any? It seems to work ok
+                    relation = llm(f"Is there a dependency relationship from {dependencies[i]} to {dependencies[j]}? If there is NOT, please respond with 'No' and 'No' only.")
                     relation = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', relation)
                     if relation.split()[0] != 'No':
-                        relations_dict[dependiences[j]].append(dependiences[i])
+                        relations_dict[dependencies[j]].append(dependencies[i])
 
         return relations_dict
 
 
     def print_flat_graph(self, learning_concept_graph: dict) -> None:
-        graph = graphviz.Graph()
+        '''
+        Print a directed graph to the screen using either the association dictionary or dependency dictionary
+
+        Parameters:
+            learning_concept_graph: The dictionary to build the graph from. This should come from either the identify_associations function or dependency_relation_extraction function
+        
+        Returns:
+            None
+        '''
+        graph = graphviz.Digraph()
 
         for key, values in learning_concept_graph.items():
             graph.node(name = key)
@@ -129,22 +257,60 @@ class LLM_Relation_Extractor:
         display(Image(graph.pipe(format = "png", renderer = "cairo")))
 
 
-    def print_interactive_graph(self, learning_graph: dict, associations: dict) -> Network:
+    def get_assocation_interactive_graph(self, learning_graph: dict, associations: dict) -> Network:
+        '''
+        Retrieve the interactive graph using the association dictionary. Nodes are chapter names and edges are the associations. Hovering over a node results in displaying that nodes learning outcomes and concepts. The function is not able to automatically display the graph so the .show() method must be called on the return object
+
+        Parameters:
+            learning_graph: The dictionary containing chapter names as keys and the values as a tuple containing the concept at index 0 and outcome at index 1. Can be created automatically using the create_chapter_dict function
+            assocations: The dictionary containing the associations between chapters. Can be created automatically using the identify_associations() function
+        
+        Returns:
+            A pyvis Network object
+        '''
 
         graph = Network(notebook = True, cdn_resources = "remote")
 
-        node_id_dict = {}
-        id_count = 1
-        for values in learning_graph.values():
-            node_id_dict[values[0]] = id_count
-            id_count += 1
+        graph.toggle_physics(False)
+
+        # Showing all interactivity options, but can be parameterized to only include some
+        graph.show_buttons()
+        
+        node_id_dict = get_node_id_dict(learning_graph)
 
         for chapter_name, chapter_id in node_id_dict.items():
-            graph.add_node(n_id = chapter_id, label = chapter_name)
-
+            graph.add_node(n_id = chapter_id, label = chapter_name, title = "Main Learning Concepts: " + learning_graph[chapter_name][0] + "\n" + "Main Learning Outcomes:" + learning_graph[chapter_name][1])
 
         for key, values in associations.items():
             for value in values:
                 graph.add_edge(node_id_dict[key], node_id_dict[value])
 
         return graph
+
+
+    def get_dependency_interactive_graph(self, dependency_dict: dict) -> Network:
+        '''
+        Retrieve the interactive graph using the dependency dictionary. The function is not able to automatically display the graph so the .show() method must be called on the return object
+
+        Parameters:
+            dependency_dict: A dictionary containing the dependencies between chapters. Can be created automatically using the dependency_relation_extraction() function
+        
+        Returns:
+            A pyvis Network object
+        '''
+
+        dependency_graph = Network(notebook = True, cdn_resources = "remote")
+        dependency_graph.toggle_physics(False)
+        dependency_graph.show_buttons()
+
+        node_id_dict = get_node_id_dict(dependency_dict)
+
+        for chapter_name, chapter_id in node_id_dict.items():
+            dependency_graph.add_node(n_id = chapter_id, label = chapter_name)
+
+
+        for key, values in dependency_dict.items():
+            for value in values:
+                dependency_graph.add_edge(node_id_dict[key], node_id_dict[value])
+
+        return dependency_graph
