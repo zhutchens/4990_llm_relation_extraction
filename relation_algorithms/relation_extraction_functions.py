@@ -18,6 +18,7 @@ os.environ['OPENAI_API_KEY'] = os.getenv('team_token')
 llm = OpenAI()
 
 
+
 # For internal use only
 def create_concept_graph_structure(param_list: list) -> dict:
     return_dict = {}
@@ -42,15 +43,31 @@ def get_node_id_dict(dictionary: dict) -> dict:
 
 class LLM_Relation_Extractor:
 
-    def __init__(self, textbook_link: str):
+    def __init__(self, link: str):
         # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
         '''
-        Constructor to create a large language model extractor class. 
+        Constructor to create a large language model relation extractor class. 
 
-        Parameters:
-            textbook_link: The link to generate answers from
+        Parameters / Attributes:
+            link: The link to generate answers from
+        
+        Methods:
+            create_chapter_dict(),
+            identify_chapters(),
+            identify_main_topics(),
+            identify_main_topic_relations(),
+            identify_learning_outcomes(),
+            identify_learning_concepts(),
+            identify_assocations(),
+            dependency_relation_extraction(),
+            print_flat_graph(),
+            get_assocation_interactive_graph(),
+            get_dependency_interactive_graph(),
+
+            
+        Note that some of these functions may take a long time to run depending on the size of whats in the link. Especially the identify_assocations() and dependency_relation_extraction()
         '''
-        self.link = textbook_link
+        self.link = link
 
     
     def create_chapter_dict(self, outcomes: list, concepts: list, chapter_dict: dict) -> dict:
@@ -110,6 +127,7 @@ class LLM_Relation_Extractor:
         '''
         main_topics = llm(f"Please identify ten main topics from this textbook: {self.link}")
         return [topic for topic in main_topics.split('\n')][2:]
+    
     
     def identify_main_topic_relations(self, main_topic_list: list) -> dict:
         '''
@@ -192,8 +210,6 @@ class LLM_Relation_Extractor:
         values = list(learning_dict.values())
         keys = list(learning_dict.keys())
 
-        # Use dictionary created from create_chapter_dict function
-
         # I think this algorithm is wrong? Maybe its better to loop through in reverse order (Ex. start with the last chapter and work downwards)
         for i in range(len(values)):
             current_tuple = values[i]
@@ -257,6 +273,7 @@ class LLM_Relation_Extractor:
         display(Image(graph.pipe(format = "png", renderer = "cairo")))
 
 
+    # NOTE: I think I might be able to combine these two functions into one
     def get_assocation_interactive_graph(self, learning_graph: dict, associations: dict) -> Network:
         '''
         Retrieve the interactive graph using the association dictionary. Nodes are chapter names and edges are the associations. Hovering over a node results in displaying that nodes learning outcomes and concepts. The function is not able to automatically display the graph so the .show() method must be called on the return object
