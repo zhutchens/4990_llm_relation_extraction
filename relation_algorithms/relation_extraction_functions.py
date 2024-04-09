@@ -1,22 +1,15 @@
 from langchain.llms import OpenAI
 import graphviz
 import os
-from dotenv import load_dotenv
 import re
 from IPython.display import display, Image
 from pyvis.network import Network
 import hypernetx as hnx
+import matplotlib.pyplot as plt
 
 # Suppress warnings
 import warnings
 warnings.filterwarnings("ignore")
-
-# Retrieve OpenAI token
-load_dotenv()
-os.environ['OPENAI_API_KEY'] = os.getenv('team_token')
-
-# LLM to use in relation extraction 
-llm = OpenAI()
 
 # Functions for internal use only
 def create_concept_graph_structure(param_list: list) -> dict:
@@ -39,16 +32,18 @@ def get_node_id_dict(dictionary: dict) -> dict:
 
     return node_id_dict
 
-# NOTE: Currently two main issues, the functions that find the chapter associations and dependencies seem to be broke. I think its the algorithm thats wrong. Both also take 10+ minutes to run
+
+# NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class LLM_Relation_Extractor:
 
-    def __init__(self, link: str):
+    def __init__(self, link: str, token: str):
         # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
         '''
         Constructor to create a large language model relation extractor class. 
 
         Parameters / Attributes:
             link: The link to generate answers from
+            token: OpenAI token
         
         Methods:
             find_commonalities()\n
@@ -67,93 +62,99 @@ class LLM_Relation_Extractor:
             
         Note that some of these functions may quite the amount of time to run depending on the size of whats in the link
         '''
+
         self.link = link
 
-    def find_commonalities(self, chapters: dict | list) -> tuple:
-        '''
-        Find the learning concepts and learning outcomes for each chapter in the textbook 5 times, compare the results, and find what is in common. Run this twice and return final results as a tuple.
+        os.environ['OPENAI_API_KEY'] = token
+        self.llm = OpenAI()
+
+
+
+    # def find_commonalities(self, chapters: dict | list) -> tuple:
+    #     '''
+    #     Find the learning concepts and learning outcomes for each chapter in the textbook 5 times, compare the results, and find what is in common. Run this twice and return final results as a tuple.
         
-        Parameters:
-            chapters: a dictionary of chapters, where the key is the chapter number and value is the chapter name. Otherwise, it can also be a list of chapter names
+    #     Parameters:
+    #         chapters: a dictionary of chapters, where the key is the chapter number and value is the chapter name. Otherwise, it can also be a list of chapter names
 
-        Returns:
-            tuple, the concepts are at index 0 and outcomes are at index 1 
-        '''
+    #     Returns:
+    #         tuple, the concepts are at index 0 and outcomes are at index 1 
+    #     '''
 
-        if type(chapters) != dict and type(chapters) != list:
-            raise ValueError('Chapters parameter is of the wrong type. Should be list or dict')
+    #     if type(chapters) != dict and type(chapters) != list:
+    #         raise ValueError('Chapters parameter is of the wrong type. Should be list or dict')
 
-        common_concepts_dict = {}
-        common_outcomes_dict = {}
+    #     concepts_dict = {}
+    #     outcomes_dict = {}
 
-        if type(chapters) is dict:
-            for name in chapters.values():
-                common_concepts_dict[name] = ([], [])
-                common_outcomes_dict[name] = ([], [])
-        else:
-            for name in chapters:
-                common_concepts_dict[name] = ([], [])
-                common_outcomes_dict[name] = ([], [])
+    #     if type(chapters) is dict:
+    #         for name in chapters.values():
+    #             concepts_dict[name] = ([], [])
+    #             outcomes_dict[name] = ([], [])
+    #     else:
+    #         for name in chapters:
+    #             concepts_dict[name] = ([], [])
+    #             outcomes_dict[name] = ([], [])
 
-        if type(chapters) is dict:
-            for i in range(2):
-                for j in range(5):
-                    for chapter_name in list(chapters.values()):
-                        # Learning concepts returns a list of split concepts for each chapter, Example:
-                        # chapter 1: ['concept 1', 'concept 2', ...'concept n']
-                        learning_concepts = self.identify_learning_concepts(chapters = list(chapters.values()))
-                        common_concepts_dict[chapter_name][i].append(learning_concepts)
+    #     if type(chapters) is dict:
+    #         for i in range(2):
+    #             for j in range(5):
+    #                 for chapter_name in list(chapters.values()):
+    #                     # Learning concepts returns a list of split concepts for each chapter, Example:
+    #                     # chapter 1: ['concept 1', 'concept 2', ...'concept n']
+    #                     learning_concepts = self.identify_learning_concepts(chapters = list(chapters.values()))
+    #                     concepts_dict[chapter_name][i].append(learning_concepts)
                 
-                        # Learning outcomes function returns a list of split concepts for each chapter, Ex:
-                        # chapter 1: ['outcome 1', 'outcome 2', ...'outcome n']
-                        learning_outcomes = self.identify_learning_outcomes(chapters = list(chapters.values()))
-                        common_outcomes_dict[chapter_name][i].append(learning_outcomes)
-        else:
-            for i in range(2):
-                for j in range(5):
-                    for chapter_name in chapters:
-                        learning_concepts = self.identify_learning_concepts(chapters = chapters)
-                        common_concepts_dict[chapter_name][i].append(learning_concepts)
+    #                     # Learning outcomes function returns a list of split concepts for each chapter, Ex:
+    #                     # chapter 1: ['outcome 1', 'outcome 2', ...'outcome n']
+    #                     learning_outcomes = self.identify_learning_outcomes(chapters = list(chapters.values()))
+    #                     outcomes_dict[chapter_name][i].append(learning_outcomes)
+    #     else:
+    #         for i in range(2):
+    #             for j in range(5):
+    #                 for chapter_name in chapters:
+    #                     learning_concepts = self.identify_learning_concepts(chapters = chapters)
+    #                     concepts_dict[chapter_name][i].append(learning_concepts)
                 
-                        learning_outcomes = self.identify_learning_outcomes(chapters = chapters)
-                        common_outcomes_dict[chapter_name][i].append([learning_outcomes])
+    #                     learning_outcomes = self.identify_learning_outcomes(chapters = chapters)
+    #                     outcomes_dict[chapter_name][i].append([learning_outcomes])
 
 
-        in_common_concepts = {}
-        in_common_outcomes = {}
+    #     in_concepts = {}
+    #     in_outcomes = {}
 
-        if type(chapters) is dict:
-            for key in chapters.values():
-                in_common_concepts[key] = []
-                in_common_outcomes[key] = []
-        else:
-            for name in chapters:
-                in_common_concepts[name] = []
-                in_common_outcomes[name] = []
+    #     if type(chapters) is dict:
+    #         for key in chapters.values():
+    #             in_concepts[key] = []
+    #             in_outcomes[key] = []
+    #     else:
+    #         for name in chapters:
+    #             in_concepts[name] = []
+    #             in_outcomes[name] = []
 
-        first_key = list(common_concepts_dict.keys())[0]
+    #     first_key = list(concepts_dict.keys())[0]
 
-        for idx in range(len(common_concepts_dict[first_key])):
-            for chapter_name, chapter_concepts in common_concepts_dict.items():
-                content = llm(f"Can you identify the common learning concepts between these lists of concepts for chapter {chapter_name}? {chapter_concepts[idx][0]}, {chapter_concepts[idx][1]}, {chapter_concepts[idx][2]}, {chapter_concepts[idx][3]}, {chapter_concepts[idx][4]}?")
-                in_common_concepts[chapter_name].append(content.split('\n')[2:])
+    #     for idx in range(len(concepts_dict[first_key])):
+    #         for chapter_name, chapter_concepts in concepts_dict.items():
+    #             content = self.llm(f"Can you identify the common learning concepts between these lists of concepts for chapter {chapter_name}? {chapter_concepts[idx][0]}, {chapter_concepts[idx][1]}, {chapter_concepts[idx][2]}, {chapter_concepts[idx][3]}, {chapter_concepts[idx][4]}?")
+    #             in_concepts[chapter_name].append(content.split('\n')[2:])
             
-            for chapter_name, chapter_outcomes in common_outcomes_dict.items():
-                content = llm(f"Can you identify the common learning outcomes between these lists for chapter {chapter_name}? {chapter_outcomes[idx][0]}, {chapter_outcomes[idx][1]}, {chapter_outcomes[idx][2]}, {chapter_outcomes[idx][3]}, {chapter_outcomes[idx][4]}?")
-                in_common_outcomes[chapter_name].append(content.split('\n')[2:])
+    #         for chapter_name, chapter_outcomes in outcomes_dict.items():
+    #             content = self.llm(f"Can you identify the common learning outcomes between these lists for chapter {chapter_name}? {chapter_outcomes[idx][0]}, {chapter_outcomes[idx][1]}, {chapter_outcomes[idx][2]}, {chapter_outcomes[idx][3]}, {chapter_outcomes[idx][4]}?")
+    #             in_outcomes[chapter_name].append(content.split('\n')[2:])
 
 
-        final_common_concept_dict = {}
-        final_common_outcome_dict = {}
+    #     final_common_concept_dict = {}
+    #     final_common_outcome_dict = {}
 
-        for key in in_common_concepts.keys():
-            content = llm(f"Please identify the common concepts between these two lists: {in_common_concepts[key][0]}, {in_common_concepts[key][1]}")
-            final_common_concept_dict[key] = content.split('\n')[2:]
+    #     for key in in_concepts.keys():
+    #         content = self.llm(f"Please identify the common concepts between these two lists: {in_concepts[key][0]}, {in_concepts[key][1]}")
+    #         final_common_concept_dict[key] = content.split('\n')[2:]
 
-            content = llm(f"Please identify the common learning outcomes between these two lists: {in_common_outcomes[key][0]}, {in_common_outcomes[key][1]}")
-            final_common_outcome_dict[key] = content.split('\n')[2:]
+    #         content = self.llm(f"Please identify the common learning outcomes between these two lists: {in_outcomes[key][0]}, {in_outcomes[key][1]}")
+    #         final_common_outcome_dict[key] = content.split('\n')[2:]
 
-        return final_common_concept_dict, final_common_outcome_dict
+    #     return final_common_concept_dict, final_common_outcome_dict
 
     
     def create_chapter_dict(self, outcomes: list, concepts: list, chapters: dict | list) -> dict:
@@ -199,7 +200,7 @@ class LLM_Relation_Extractor:
         '''
         # NOTE: This is very, very, inconsistent. Do not recommend using this.
 
-        chapters = llm(f"Please identify the chapters in this textbook: {self.link}")
+        chapters = self.llm(f"Please identify the chapters in this textbook: {self.link}")
         chapters = chapters.split('\n')
         chapter_dict = {}
         for idx, chapter in enumerate(chapters):
@@ -218,7 +219,7 @@ class LLM_Relation_Extractor:
         Returns:
             list
         '''
-        main_topics = llm(f"Please identify ten main topics from this textbook: {self.link}")
+        main_topics = self.llm(f"Please identify ten main topics from this textbook: {self.link}")
         return [topic for topic in main_topics.split('\n')][2:]
     
     
@@ -238,7 +239,7 @@ class LLM_Relation_Extractor:
         for i in range(len(main_topic_list)):
             for j in range(len(main_topic_list)):
                 if i != j:
-                    relation = llm(f"Is there a relationship between this topic: {main_topic_list[i]}, and this topic: {main_topic_list[j]}? If there is NOT, please respond with 'No' and 'No' only.")
+                    relation = self.llm(f"Is there a relationship between this topic: {main_topic_list[i]}, and this topic: {main_topic_list[j]}? If there is NOT, please respond with 'No' and 'No' only.")
                     relation = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', relation)
                     if relation.split(',')[0].strip() != 'No':
                         topic_relations[main_topic_list[i]].append(main_topic_list[j])
@@ -261,12 +262,12 @@ class LLM_Relation_Extractor:
     
         if type(chapters) is dict:
             for chapter_num, chapter_name in chapters.items():
-                current_outcome = llm(f"Please identify the main learning outcomes given {chapter_num}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}")
+                current_outcome = self.llm(f"Please identify the main learning outcomes given {chapter_num}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}")
                 current_outcome = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_outcome)
                 outcome_list.append(current_outcome.split('\n'))
         else:
             for name in chapters:
-                current_outcome = llm(f"Please identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}")
+                current_outcome = self.llm(f"Please identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}")
                 current_outcome = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_outcome)
                 outcome_list.append(current_outcome.split('\n'))
         
@@ -289,12 +290,12 @@ class LLM_Relation_Extractor:
 
         if type(chapters) is dict:
             for chapter_num, chapter_name in chapters.items():
-                current_concept = llm(f"Please identify the main learning concepts given {chapter_num}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}. Additionally, please limit your response to 10 concepts.")
+                current_concept = self.llm(f"Please identify the main learning concepts given {chapter_num}, the chapter name is {chapter_name}. Here is the textbook in which to retrieve them: {self.link}. Additionally, please limit your response to 10 concepts.")
                 current_concept = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_concept)
                 concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
         else:
             for name in chapters:
-                current_concept = llm(f"Please identify the main learning concepts given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}. Additionally, please limit your response to 10 concepts.")
+                current_concept = self.llm(f"Please identify the main learning concepts given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}. Additionally, please limit your response to 10 concepts.")
                 current_concept = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_concept)
                 concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
 
@@ -322,9 +323,9 @@ class LLM_Relation_Extractor:
             for j in range(len(values)):
                 if i != j:
                     next_tuple = values[j]
-                    new_association = llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
+                    new_association = self.llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
                     new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
-                    # Try to only add associations to the graph, but its difficult because sometimes the LLM won't start its response with 'No'
+                    # Try to only add associations to the graph, but its difficult because sometimes the self.llm won't start its response with 'No'
                     if new_association.split(',')[0].strip() != 'No':
                         association_dict[keys[i]].append(keys[j])
             
@@ -349,7 +350,7 @@ class LLM_Relation_Extractor:
 
         for i in range(len(keys)):
             for j in range(1, len(keys)):
-                relation = llm(f"Please identify if these concepts: {concept_dict[keys[i]][0]} are a prerequisite for these concepts: {concept_dict[keys[j]][0]}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
+                relation = self.llm(f"Please identify if these concepts: {concept_dict[keys[i]][0]} are a prerequisite for these concepts: {concept_dict[keys[j]][0]}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
                 relation = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', relation)
                 if relation.split(',')[0].strip() != 'No':
                     relations_dict[keys[j]].append(keys[i])
@@ -437,37 +438,36 @@ class LLM_Relation_Extractor:
         return dependency_graph
     
 
-    def draw_hypergraph(self, common_concepts: dict | None, common_outcomes: dict | None) -> None:
+    def draw_hypergraph(self, concepts: dict | None, outcomes: dict | None) -> None:
         '''
         Generate and print a hypergraph provided the common outcomes or concepts from the find_commonalities() function. One of the parameters must be None, both hypergraphs cannot be printed at the same time
 
         Parameters:
-            common_concepts: dict or None. The common concepts dictionary returned from the find_commonalities() function
-            common_outcomes: dict or None. The common outcomes dictionary returned from the find_commonalities() function
-
+            concepts: dict or None. A dictionary of concepts. The key should be the chapter name and the value a list of concepts
+            outcomes: dict or None. A dictionary of outcomes, the key should be the chapter name and value a list of outcomes
         Returns:
             None
         '''
 
-        if common_concepts != None and common_outcomes != None:
+        if concepts != None and outcomes != None:
             raise ValueError('Cannot print hypergraph for both dictionaries at once. Please set one of the parameters to None.')
         
-        if common_concepts != None:
-            keys = list(common_concepts.keys())
+        if concepts != None:
+            keys = list(concepts.keys())
         else:
-            keys = list(common_outcomes.keys())
+            keys = list(outcomes.keys())
 
         chapter_names = {}
 
-        if common_concepts is not None:
+        if concepts is not None:
             for key in keys:
                 chapter_names[key] = []
 
             for i in range(len(keys)):
-                current_concept = common_concepts[keys[i]]
+                current_concept = concepts[keys[i]]
                 for j in range(i + 1, len(keys)):
-                    next_concept = common_concepts[keys[j]]
-                    content = llm(f"Please identify if the current learning concept: {next_concept} has a prerequisite for the previous learning concept: {current_concept}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
+                    next_concept = concepts[keys[j]]
+                    content = self.llm(f"Please identify if the current learning concept: {next_concept} has a prerequisite for the previous learning concept: {current_concept}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
                     if content.split(',')[0].strip() != 'No':
                         chapter_names[keys[j]].append(keys[i])
         else:
@@ -475,13 +475,16 @@ class LLM_Relation_Extractor:
                 chapter_names[key] = []
 
             for i in range(len(keys)):
-                current_outcome = common_outcomes[keys[i]]
+                current_outcome = outcomes[keys[i]]
                 for j in range(i + 1, len(keys)):
-                    next_outcome = common_outcomes[keys[j]]
-                    content = llm(f"Please identify if the current learning outcome: {next_outcome} has a prerequisite for the previous learning outcome: {current_outcome}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
+                    next_outcome = outcomes[keys[j]]
+                    content = self.llm(f"Please identify if the current learning outcome: {next_outcome} has a prerequisite for the previous learning outcome: {current_outcome}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
                     if content.split(',')[0].strip() != 'No':
                         chapter_names[keys[j]].append(keys[i])
                 
         hypergraph = hnx.Hypergraph(chapter_names)
-        hnx.draw(hypergraph, with_edge_labels = False)
+        hnx.draw(hypergraph, with_edge_labels = True, with_node_labels = False)
+
+        plt.legend(handles = [plt.Line2D([], [], linestyle = '', label = f'{idx + 1}: {node}', marker = 'ro') for idx, node in enumerate(list(chapter_names.keys()))])
+        plt.show()
         
