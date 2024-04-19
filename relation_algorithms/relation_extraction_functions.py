@@ -6,6 +6,8 @@ from IPython.display import display, Image
 from pyvis.network import Network
 import hypernetx as hnx
 import matplotlib.pyplot as plt
+import graphlib
+from py3plex.core import multinet
 
 # Suppress warnings
 import warnings
@@ -69,94 +71,6 @@ class LLM_Relation_Extractor:
         self.llm = OpenAI()
 
 
-
-    # def find_commonalities(self, chapters: dict | list) -> tuple:
-    #     '''
-    #     Find the learning concepts and learning outcomes for each chapter in the textbook 5 times, compare the results, and find what is in common. Run this twice and return final results as a tuple.
-        
-    #     Parameters:
-    #         chapters: a dictionary of chapters, where the key is the chapter number and value is the chapter name. Otherwise, it can also be a list of chapter names
-
-    #     Returns:
-    #         tuple, the concepts are at index 0 and outcomes are at index 1 
-    #     '''
-
-    #     if type(chapters) != dict and type(chapters) != list:
-    #         raise ValueError('Chapters parameter is of the wrong type. Should be list or dict')
-
-    #     concepts_dict = {}
-    #     outcomes_dict = {}
-
-    #     if type(chapters) is dict:
-    #         for name in chapters.values():
-    #             concepts_dict[name] = ([], [])
-    #             outcomes_dict[name] = ([], [])
-    #     else:
-    #         for name in chapters:
-    #             concepts_dict[name] = ([], [])
-    #             outcomes_dict[name] = ([], [])
-
-    #     if type(chapters) is dict:
-    #         for i in range(2):
-    #             for j in range(5):
-    #                 for chapter_name in list(chapters.values()):
-    #                     # Learning concepts returns a list of split concepts for each chapter, Example:
-    #                     # chapter 1: ['concept 1', 'concept 2', ...'concept n']
-    #                     learning_concepts = self.identify_learning_concepts(chapters = list(chapters.values()))
-    #                     concepts_dict[chapter_name][i].append(learning_concepts)
-                
-    #                     # Learning outcomes function returns a list of split concepts for each chapter, Ex:
-    #                     # chapter 1: ['outcome 1', 'outcome 2', ...'outcome n']
-    #                     learning_outcomes = self.identify_learning_outcomes(chapters = list(chapters.values()))
-    #                     outcomes_dict[chapter_name][i].append(learning_outcomes)
-    #     else:
-    #         for i in range(2):
-    #             for j in range(5):
-    #                 for chapter_name in chapters:
-    #                     learning_concepts = self.identify_learning_concepts(chapters = chapters)
-    #                     concepts_dict[chapter_name][i].append(learning_concepts)
-                
-    #                     learning_outcomes = self.identify_learning_outcomes(chapters = chapters)
-    #                     outcomes_dict[chapter_name][i].append([learning_outcomes])
-
-
-    #     in_concepts = {}
-    #     in_outcomes = {}
-
-    #     if type(chapters) is dict:
-    #         for key in chapters.values():
-    #             in_concepts[key] = []
-    #             in_outcomes[key] = []
-    #     else:
-    #         for name in chapters:
-    #             in_concepts[name] = []
-    #             in_outcomes[name] = []
-
-    #     first_key = list(concepts_dict.keys())[0]
-
-    #     for idx in range(len(concepts_dict[first_key])):
-    #         for chapter_name, chapter_concepts in concepts_dict.items():
-    #             content = self.llm(f"Can you identify the common learning concepts between these lists of concepts for chapter {chapter_name}? {chapter_concepts[idx][0]}, {chapter_concepts[idx][1]}, {chapter_concepts[idx][2]}, {chapter_concepts[idx][3]}, {chapter_concepts[idx][4]}?")
-    #             in_concepts[chapter_name].append(content.split('\n')[2:])
-            
-    #         for chapter_name, chapter_outcomes in outcomes_dict.items():
-    #             content = self.llm(f"Can you identify the common learning outcomes between these lists for chapter {chapter_name}? {chapter_outcomes[idx][0]}, {chapter_outcomes[idx][1]}, {chapter_outcomes[idx][2]}, {chapter_outcomes[idx][3]}, {chapter_outcomes[idx][4]}?")
-    #             in_outcomes[chapter_name].append(content.split('\n')[2:])
-
-
-    #     final_common_concept_dict = {}
-    #     final_common_outcome_dict = {}
-
-    #     for key in in_concepts.keys():
-    #         content = self.llm(f"Please identify the common concepts between these two lists: {in_concepts[key][0]}, {in_concepts[key][1]}")
-    #         final_common_concept_dict[key] = content.split('\n')[2:]
-
-    #         content = self.llm(f"Please identify the common learning outcomes between these two lists: {in_outcomes[key][0]}, {in_outcomes[key][1]}")
-    #         final_common_outcome_dict[key] = content.split('\n')[2:]
-
-    #     return final_common_concept_dict, final_common_outcome_dict
-
-    
     def create_chapter_dict(self, outcomes: list, concepts: list, chapters: dict | list) -> dict:
         '''
         Create a chapter dictionary containing the chapter names as keys and its learning concepts and outcomes in a tuple as the value. Concept is at index 0 and outcome is at index 1
@@ -325,7 +239,7 @@ class LLM_Relation_Extractor:
                     next_tuple = values[j]
                     new_association = self.llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
                     new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
-                    # Try to only add associations to the graph, but its difficult because sometimes the self.llm won't start its response with 'No'
+                    # Try to only add associations to the graph, but its difficult because sometimes the llm won't start its response with 'No'
                     if new_association.split(',')[0].strip() != 'No':
                         association_dict[keys[i]].append(keys[j])
             
@@ -438,53 +352,57 @@ class LLM_Relation_Extractor:
         return dependency_graph
     
 
-    def draw_hypergraph(self, concepts: dict | None, outcomes: dict | None) -> None:
+    def draw_hypergraph(self, dictionary: dict) -> None:
         '''
-        Generate and print a hypergraph provided the common outcomes or concepts from the find_commonalities() function. One of the parameters must be None, both hypergraphs cannot be printed at the same time
+        Generate and display a hypergraph given a dependency dictionary generated from identify_dependencies() or association dict generated by identify_associations()
 
         Parameters:
-            concepts: dict or None. A dictionary of concepts. The key should be the chapter name and the value a list of concepts
-            outcomes: dict or None. A dictionary of outcomes, the key should be the chapter name and value a list of outcomes
+            dependencies: A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
+
         Returns:
             None
         '''
-
-        if concepts != None and outcomes != None:
-            raise ValueError('Cannot print hypergraph for both dictionaries at once. Please set one of the parameters to None.')
-        
-        if concepts != None:
-            keys = list(concepts.keys())
-        else:
-            keys = list(outcomes.keys())
-
-        chapter_names = {}
-
-        if concepts is not None:
-            for key in keys:
-                chapter_names[key] = []
-
-            for i in range(len(keys)):
-                current_concept = concepts[keys[i]]
-                for j in range(i + 1, len(keys)):
-                    next_concept = concepts[keys[j]]
-                    content = self.llm(f"Please identify if the current learning concept: {next_concept} has a prerequisite for the previous learning concept: {current_concept}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
-                    if content.split(',')[0].strip() != 'No':
-                        chapter_names[keys[j]].append(keys[i])
-        else:
-            for key in keys:
-                chapter_names[key] = []
-
-            for i in range(len(keys)):
-                current_outcome = outcomes[keys[i]]
-                for j in range(i + 1, len(keys)):
-                    next_outcome = outcomes[keys[j]]
-                    content = self.llm(f"Please identify if the current learning outcome: {next_outcome} has a prerequisite for the previous learning outcome: {current_outcome}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
-                    if content.split(',')[0].strip() != 'No':
-                        chapter_names[keys[j]].append(keys[i])
                 
-        hypergraph = hnx.Hypergraph(chapter_names)
-        hnx.draw(hypergraph, with_edge_labels = True, with_node_labels = False)
+        sorted_dependencies = graphlib.TopologicalSorter(graph = dictionary)
 
-        plt.legend(handles = [plt.Line2D([], [], linestyle = '', label = f'{idx + 1}: {node}', marker = 'ro') for idx, node in enumerate(list(chapter_names.keys()))])
+        temp = sorted_dependencies
+        sorted_dependencies = {}
+
+        for value in temp:
+            sorted_dependencies[value] = dictionary[value]
+
+        hypergraph = hnx.Hypergraph(sorted_dependencies)
+        hnx.draw(hypergraph)
+        plt.title("Hypergraph")
         plt.show()
+
+
+    def draw_multi_layered_graph(dictionary: dict) -> None:
+        '''
+        Generate and display a multilayered graph given a dependency dictionary generated from identify_dependencies() or association dict generated by identify_associations()
+
+        Parameters:
+            dependencies: A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
+
+        Returns:
+            None
+        '''
         
+        multi_graph = multinet.multi_layer_network(network_type = "multiplex")
+
+        for node, edges in dictionary.items():
+            node_data = {"source": node, "type": node}
+            multi_graph.add_nodes(node_data)
+            for edge in edges:
+                simple_edge = {
+                        "source": node,
+                        "target": edge,
+                        "source_type": node,
+                        "target_type": edge
+                        }
+                
+                multi_graph.add_edges(simple_edge, input_type = "dict") 
+
+        multi_graph.visualize_network(style = "diagonal")
+        plt.title("Multilayered Dependency Graph")
+        plt.show()
