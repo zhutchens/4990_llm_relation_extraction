@@ -38,6 +38,7 @@ def get_node_id_dict(dictionary: dict) -> dict:
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class LLM_Relation_Extractor:
 
+
     def __init__(self, link: str, token: str):
         # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
         '''
@@ -69,6 +70,45 @@ class LLM_Relation_Extractor:
 
         os.environ['OPENAI_API_KEY'] = token
         self.llm = OpenAI()
+
+
+    def identify_key_terms(self, n_terms: int, chapters: list) -> dict:
+        '''
+        Identify the key terms for each chapter
+        
+        Parameters:
+            n_terms: number of key terms to use
+            list: a list of chapter names
+
+        Returns:
+        dict
+        '''
+
+        if type(n_terms) is not int:
+            raise ValueError(f"n_terms should be of type int, got type {type(chapters)}")
+        if type(chapters) is not list:
+            raise ValueError(f"chapters should be of type list, got type {type(chapters)}")
+
+        key_terms_dict = {}
+        for name in chapters:
+            terms = self.llm(f"Identify the key terms for chapter {name} in this textbook: {self.link}. Please only identify {n_terms} key terms.")
+            key_terms_dict[name] = [term for term in terms.split('\n') if term != '']
+        
+        return key_terms_dict
+    
+
+    def summarize(self):
+        '''
+        Return summary of textbook.
+
+        Paramters:
+            None
+
+        Returns:
+        str
+        '''
+        
+        return self.llm(f"Please summarize this textbook {self.link}")
 
 
     def create_chapter_dict(self, outcomes: list, concepts: list, chapters: dict | list) -> dict:
