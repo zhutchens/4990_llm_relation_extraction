@@ -85,13 +85,13 @@ class LLM_Relation_Extractor:
         '''
 
         if type(n_terms) is not int:
-            raise ValueError(f"n_terms should be of type int, got type {type(chapters)}")
+            raise ValueError(f"n_terms should be of type int, got type {type(n_terms)}")
         if type(chapters) is not list:
             raise ValueError(f"chapters should be of type list, got type {type(chapters)}")
 
         key_terms_dict = {}
         for name in chapters:
-            terms = self.llm(f"Identify the key terms for chapter {name} in this textbook: {self.link}. Please only identify {n_terms} key terms.")
+            terms = self.llm(f"Identify the key terms for chapter {name} in this textbook: {self.link}. Please only identify {n_terms} key terms. Additionally, please list them in order of importance.")
             key_terms_dict[name] = [term for term in terms.split('\n') if term != '']
         
         return key_terms_dict
