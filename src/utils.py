@@ -31,7 +31,7 @@ def get_node_id_dict(dictionary: dict) -> dict:
     return node_id_dict
 
 
-def contains_title(chapters: list, text: str, completed: list, consider: int = None, current: str = None):
+def contains_title(chapters: list, text: str, completed: list, consider: int = None, current: str = None) -> str | None:
     '''
     Find if a page contains a starting point of a chapter. 
     
@@ -79,7 +79,17 @@ def contains_title(chapters: list, text: str, completed: list, consider: int = N
             return None
 
 
-def is_substring(substring, chapters):
+def is_substring(substring: str, chapters: list[str]) -> bool:
+    '''
+    Checks if a string is inside a given chapter
+
+    Args:
+        substring (str): the substring to check for
+        chapters (list[str]): list of chapters to check in
+
+    Returns:
+        bool: True if substring is found, False otherwise
+    '''
     for chapter in chapters:
         if substring in chapter:
             return True
@@ -89,7 +99,18 @@ def is_substring(substring, chapters):
 
 # NOTE: this function splits the three textbooks correctly by chapter (hadoop, intro. to algorithms, data structures and algorithms)
 # Not sure if it generalizes well to other types of docs (assignments, other textbooks, etc)
-def split(link: str, chapters: list, stopword: str) -> dict:
+def split(link: str, chapters: list[str], stopword: str) -> dict[str, str]:
+    '''
+    Splits a web link into chapter/section chunks.
+
+    Args:
+        link (str): web link 
+        chapters (list[str]): list of chapters in the web link
+        stopword (str): first word where the last chapter ends (usually appendix or bibiliography)
+
+    Returns:
+        dict: key as chapter name, value as chapter content
+    '''
     content = urlopen(link).read()
     doc = pymupdf.open('pdf', BytesIO(content))
 
@@ -150,7 +171,16 @@ def split(link: str, chapters: list, stopword: str) -> dict:
     return strings
 
 
-def lc_split(link: str):
+def lc_split(link: str) -> list[str]:
+    '''
+    Splits the web link content using langchains recursive character text splitter
+
+    Args:
+        link (str): web link
+
+    Returns:
+        list[str]: web content strings
+    '''
     # docs = []
     # # print(f'Inside lc_split: chapter texts is {chapter_texts}')
     # for chp in chapter_texts.keys():
@@ -186,15 +216,16 @@ def invoke_retriever(query: str) -> list[Document]:
         query (str): question or statement to give to the retriever
 
     Returns:
-        list[Document]: relevant pages of documents from retriever
+        list[Document]: relevant pages of documents
     '''
 
+    # this should never happen but just in case!
     if not retriever:
         raise ValueError(f'Please run create_retriever() first before invoking it.')
     
     # return retriever.invoke(input = query)
     # return retriever.similarity_search(query = query)
-    return retriever.as_retriever(search_type = 'mmr').invoke(query)
+    return retriever.as_retriever(search_type = 'similarity').invoke(query)
 
 
 def create_retriever(link: str) -> None:

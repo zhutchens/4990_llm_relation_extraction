@@ -19,7 +19,7 @@ from src.utils import create_concept_graph_structure, split, get_node_id_dict, c
 
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class LLM_Relation_Extractor:
-    def __init__(self, link: str, token: str, chapters: list, stopword: str):
+    def __init__(self, link: str, token: str, chapters: list[str], stopword: str):
         # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
         '''
         Constructor to create a large language model relation extractor class. 
@@ -40,7 +40,7 @@ class LLM_Relation_Extractor:
         create_retriever(self.link)
 
 
-    def identify_key_terms(self, chapter_name: str, n_terms: int) -> list:
+    def identify_key_terms(self, chapter_name: str, n_terms: int) -> list[str]:
         '''
         Identify the key terms for each chapter
         
@@ -49,7 +49,7 @@ class LLM_Relation_Extractor:
             n_terms: number of key terms to use
 
         Returns:
-            list: key terms of chapter
+            list[str]: key terms of chapter
         '''
         if type(n_terms) is not int:
             raise ValueError(f"n_terms should be of type int, got type {type(n_terms)}")
@@ -76,16 +76,16 @@ class LLM_Relation_Extractor:
         return self.llm.invoke(f"Please summarize this textbook {self.link}")
 
 
-    def create_chapter_dict(self, outcomes: list, concepts: list) -> dict:
+    def create_chapter_dict(self, outcomes: list[str], concepts: list[str]) -> dict[str, tuple[str, str]]:
         '''
         Create a chapter dictionary containing the chapter names as keys and its concepts and outcomes in a tuple as the value
 
         Args:
-            outcomes (list): a list of learning outcomes created from the identify_learning_outcomes function
-            concepts (list): a list of learning concepts created from the identify_learning_concepts function
+            outcomes (list[str]): a list of learning outcomes created from the identify_learning_outcomes function
+            concepts (list[str]): a list of learning concepts created from the identify_learning_concepts function
 
         Returns:
-            dict: dictionary containing chapter names as keys and concepts/outcomes as tuple
+            dict[str, tuple[str, str]]: dictionary containing chapter names as keys and concepts/outcomes as tuple
         '''
         outcome_concept_graph = {}
 
@@ -95,7 +95,7 @@ class LLM_Relation_Extractor:
         return outcome_concept_graph
         
     
-    def identify_chapters(self) -> dict:
+    def identify_chapters(self) -> dict[str, str]:
         '''
         Identify the chapters within the class provided link using a large language model
         It is very, very inconsistent and I highly recommened manually creating the dictionary
@@ -104,7 +104,7 @@ class LLM_Relation_Extractor:
             None
 
         Returns:
-            dict: key is chapter number, value is chapter name
+            dict[str, str]: key is chapter number, value is chapter name
         '''
         # NOTE: This is very, very, inconsistent. Do not recommend using this.
         chapters = self.llm.invoke(f"Please identify the chapters in this textbook: {self.link}")
@@ -125,21 +125,21 @@ class LLM_Relation_Extractor:
             None
         
         Returns:
-            list: list of main topics 
+            list[str]: list of main topics 
         '''
         main_topics = self.llm.invoke(f"Please identify the main topics from this textbook: {self.link}")
         return [topic for topic in main_topics.split('\n')][2:]
     
     
-    def identify_main_topic_relations(self, main_topic_list: list) -> dict:
+    def identify_main_topic_relations(self, main_topic_list: list[str]) -> dict[str, list[str]]:
         '''
         Identify the relationships between the main topics of the textbook
 
         Args:
-            main_topics_list: A list of main topics from the textbook. Can be automatically created using the identify_main_topics() function
+            main_topics_list (list[str]): A list of main topics from the textbook. Can be automatically created using the identify_main_topics() function
         
         Returns:
-            dict
+            dict[str, list[str]]: relationships between main topics as adjacency list
         '''
         topic_relations = create_concept_graph_structure(main_topic_list)
 
@@ -155,7 +155,7 @@ class LLM_Relation_Extractor:
         return topic_relations
 
     
-    def identify_outcomes(self) -> list[str]:
+    def identify_outcomes(self) -> list[list[str]]:
         '''
         Identify the main learning outcomes within the class provided link
 
@@ -163,7 +163,7 @@ class LLM_Relation_Extractor:
             None
         
         Returns:
-            list
+            list[list[str]]: list of outcomes for each chapter
         '''
         outcome_list = []
         current_outcome = ''
@@ -177,7 +177,7 @@ class LLM_Relation_Extractor:
         return outcome_list
     
 
-    def identify_concepts(self) -> list[str]:
+    def identify_concepts(self) -> list[list[str]]:
         '''
         Identify the main learning concepts within the class provided link
 
@@ -185,7 +185,7 @@ class LLM_Relation_Extractor:
             None
         
         Returns:
-            list
+            list: list of concepts for each chapter
         '''
 
         concept_list = []
@@ -220,15 +220,15 @@ class LLM_Relation_Extractor:
         return concept_list
         
 
-    def identify_associations(self, learning_dict: dict) -> dict:
+    def identify_associations(self, learning_dict: dict[str, tuple[str, str]]) -> dict[str, list[str]]:
         '''
         Identify associations between chapters. For example, if there is an association between Chapter 1 and 3 it will be added to the dictionary. The return dict contains chapter names as keys and the chapter names its associated with as values
 
         Args:
-            learning_dict: The dictionary returned from the create_chapter_dict() function
+            learning_dict (dict[str, tuple[str, str]]): The dictionary returned from the create_chapter_dict() function
 
         Returns:
-            dict
+            dict[str, list[str]]: associations between chapters as adjacency list
         '''
         association_dict = create_concept_graph_structure(param_list = list(learning_dict.keys()))
         new_association = ''
@@ -250,15 +250,15 @@ class LLM_Relation_Extractor:
         return association_dict
 
 
-    def identify_dependencies(self, concept_dict: dict) -> dict:
+    def identify_dependencies(self, concept_dict: dict[str, list[str]]) -> dict[str, list[str]]:
         '''
         Identify the dependency relationships between chapters, returns a dictionary where the key is a chapter name and the value is a list of chapters it depends on
 
         Args: 
-            concept_dict: a dictionary containing the chapter names as keys and their learning concepts as values. Dictionary should come from the create_chapter_dict() function
+            concept_dict (dict[str, list[str]]): a dictionary containing the chapter names as keys and their learning concepts as values. Dictionary should come from the create_chapter_dict() function
 
         Returns:
-            dict
+            dict[str, list[str]]: depedencies between chapters as adjacency list
         '''
 
         relation = ''
@@ -278,9 +278,9 @@ class LLM_Relation_Extractor:
         return relations_dict
 
 
-    def print_flat_graph(self, concept_graph: dict) -> None:
+    def print_flat_graph(self, concept_graph: dict[str, list[str]]) -> None:
         '''
-        Print a directed graph to the screen using either the association dictionary or dependency dictionary
+        Print a directed graph using either the association dictionary or dependency dictionary
 
         Args:
             learning_concept_graph: The dictionary to build the graph from. This should come from either the identify_associations function or identify_dependencies function
@@ -299,7 +299,7 @@ class LLM_Relation_Extractor:
 
 
     # NOTE: I think I might be able to combine these two functions into one
-    def get_assocation_interactive_graph(self, graph: dict, associations: dict) -> Network:
+    def get_assocation_interactive_graph(self, graph: dict[str, tuple[str, str]], associations: dict[str, list[str]]) -> Network:
         '''
         Retrieve the interactive graph using the association dictionary. Nodes are chapter names and edges are the associations. Hovering over a node results in displaying that nodes learning outcomes and concepts. The function is not able to automatically display the graph so the .show() method must be called on the return object
 
@@ -330,12 +330,12 @@ class LLM_Relation_Extractor:
         return graph
 
 
-    def get_dependency_interactive_graph(self, dependency_dict: dict) -> Network:
+    def get_dependency_interactive_graph(self, dependency_dict: dict[str, list[str]]) -> Network:
         '''
         Retrieve the interactive graph using the dependency dictionary. The function is not able to automatically display the graph so the .show() method must be called on the return object
 
         Args:
-            dependency_dict: A dictionary containing the chapter_names between chapters. Can be created automatically using the dependency_relation_extraction() function
+            dependency_dict (dict[str, list[str]]): A dictionary containing the chapter_names between chapters. Can be created automatically using the dependency_relation_extraction() function
         
         Returns:
             A pyvis Network object
@@ -358,12 +358,12 @@ class LLM_Relation_Extractor:
         return dependency_graph
     
 
-    def draw_hypergraph(self, dictionary: dict) -> None:
+    def draw_hypergraph(self, dictionary: dict[str, list[str]]) -> None:
         '''
         Generate and display a hypergraph given a dependency dictionary generated from identify_dependencies() or association dict generated by identify_associations()
 
         Args:
-            dependencies (dict): A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
+            dependencies (dict[str, list[str]]): A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
 
         Returns:
             None
@@ -384,12 +384,12 @@ class LLM_Relation_Extractor:
         plt.show()
 
 
-    def draw_multi_layered_graph(self, dictionary: dict) -> None:
+    def draw_multi_layered_graph(self, dictionary: dict[str, list[str]]) -> None:
         '''
         Generate and display a multilayered graph given a dependency dictionary generated from identify_dependencies() or association dict generated by identify_associations()
 
         Args:
-            dependencies (dict): A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
+            dependencies (dict[str, list[str]]): A dictionary of dependencies. Can be generated by identify_dependencies(). The key should be a chapter name and the value a list of chapters it depends on
 
         Returns:
             None
@@ -425,7 +425,7 @@ class LLM_Relation_Extractor:
         plt.show()
 
 
-    def validate(self, concepts: dict, ground_truth: list, metrics: list) -> list:
+    def validate(self, concepts: dict[str, list[str]], ground_truth: list[str], metrics: list, multi_turn: bool = False) -> list[SingleTurnSample]:
         '''
         Validate concepts from LLM  
 
@@ -435,9 +435,10 @@ class LLM_Relation_Extractor:
             ground_truth (list): ground truth concepts 
             stopword (str): first word where the textbook chapters end (usually appendix or bibliography)
             metrics (list, default None): list of metrics to use from ragas library
+            multi_turn (bool, default False): if True, use MultiTurnSample. Otherwise uses SingleTurnSample
 
         Returns:
-            list: list of samples used for evaluation  
+            list[SingleTurnSample]: list of samples used for evaluation  
         '''      
         samples = []
 
