@@ -4,36 +4,32 @@ import os
 import re
 from IPython.display import display, Image
 from pyvis.network import Network
-import hypernetx as hnx
+# import hypernetx as hnx
 import matplotlib.pyplot as plt
 import graphlib
 from py3plex.core import multinet
-import pymupdf
-from urllib.request import urlopen
-from io import BytesIO
-from ragas import evaluate, SingleTurnSample
+from ragas import evaluate as ev
+from ragas import SingleTurnSample, MultiTurnSample
 from ragas.dataset_schema import EvaluationDataset
 from src.utils import create_concept_graph_structure, split, get_node_id_dict, create_retriever, invoke_retriever
-
 
 
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class LLM_Relation_Extractor:
     def __init__(self, link: str, token: str, chapters: list[str], stopword: str):
-        # NOTE: Would it also be helpful to add a chapter dictionary as a parameter?
         '''
         Constructor to create a large language model relation extractor class. 
 
         Args:
             link (str): the web link to generate answers from
             token (str): OpenAI token
-            chapters (list): list of chapter names in link
+            chapters (list): list of chapter/section names in link
             stopword (str): word where last chapter ends (usually appendix or bibliography)
         '''
         self.link = link
         self.chapters = chapters
         self.stopword = stopword
-
+  
         os.environ['OPENAI_API_KEY'] = token
         self.llm = ChatOpenAI(temperature = 0)
 
@@ -51,15 +47,21 @@ class LLM_Relation_Extractor:
         Returns:
             list[str]: key terms of chapter
         '''
-        if type(n_terms) is not int:
-            raise ValueError(f"n_terms should be of type int, got type {type(n_terms)}")
-
         if chapter_name is None:
             raise ValueError('chapter_name cannot be None')
         
-        terms = self.llm.invoke(f'Identify {n_terms} key terms for chapter {chapter_name}. The textbook can be found here: {self.link}. Finally, with each term provide an explanation as to why that term should be included.').content
-    
-        # return terms.split('\n')[2:]
+        prompt = f'''
+                Identify {n_terms} key terms from Chapter {chapter_name} in descending order of significance, listing the most significant terms first. The textbook is available here: {self.link}.
+                For each term, provide the following:
+                - Confidence Interval (CI)
+                - Corresponding Statistical Significance (p-value)
+                - A brief explanation of the term's relevance and importance
+                Format:
+                term :: confidence interval :: p-value :: explanation
+                '''
+
+        terms = self.llm.invoke(prompt).content 
+
         return [string for string in terms.split('\n') if string != '']
 
 
@@ -73,7 +75,7 @@ class LLM_Relation_Extractor:
         Returns:
             str: summary of textbook
         '''
-        return self.llm.invoke(f"Please summarize this textbook {self.link}")
+        return self.llm.invoke(f"Please summarize this textbook {self.link}").content
 
 
     def create_chapter_dict(self, outcomes: list[str], concepts: list[str]) -> dict[str, tuple[str, str]]:
@@ -94,27 +96,29 @@ class LLM_Relation_Extractor:
                 
         return outcome_concept_graph
         
-    
-    def identify_chapters(self) -> dict[str, str]:
-        '''
-        Identify the chapters within the class provided link using a large language model
-        It is very, very inconsistent and I highly recommened manually creating the dictionary
+    # note: fix later
+    # def identify_chapters(self) -> dict[str, str]:
+    #     '''
+    #     Identify the chapters within the class provided link using a large language model
+    #     It is very, very inconsistent and I highly recommened manually creating the dictionary
 
-        Args:
-            None
+    #     Args:
+    #         None
 
-        Returns:
-            dict[str, str]: key is chapter number, value is chapter name
-        '''
-        # NOTE: This is very, very, inconsistent. Do not recommend using this.
-        chapters = self.llm.invoke(f"Please identify the chapters in this textbook: {self.link}")
-        chapters = chapters.split('\n')
-        chapter_dict = {}
+    #     Returns:
+    #         dict[str, str]: key is chapter number, value is chapter name
+    #     '''
+    #     # NOTE: This is very, very, inconsistent. Do not recommend using this.
+
+    #     # chapters = self.llm.invoke(f"Please identify the chapters in this textbook: {self.link}").content
+    #     chapters = self.llm.invoke().content
+    #     chapters = chapters.split('\n')
+    #     chapter_dict = {}
         
-        for idx, chapter in enumerate(chapters):
-            chapter_dict[f"Chapter {idx + 1}"] = chapter
+    #     for idx, chapter in enumerate(chapters):
+    #         chapter_dict[f"Chapter {idx + 1}"] = chapter
 
-        return chapter_dict
+    #     return chapter_dict
 
 
     def identify_main_topics(self) -> list[str]:
@@ -127,8 +131,16 @@ class LLM_Relation_Extractor:
         Returns:
             list[str]: list of main topics 
         '''
-        main_topics = self.llm.invoke(f"Please identify the main topics from this textbook: {self.link}")
-        return [topic for topic in main_topics.split('\n')][2:]
+        # main_topics = self.llm.invoke(f"Please identify the main topics from this textbook: {self.link}").content
+        # main_topics = self.llm.invoke(f'Please identify the main topics from this textbook: {self.link}. Please provide justification.'
+        prompt = f'''
+                    Please identify the main topics from this textbook: {self.link}. Please provide justification.
+                    Format:
+                    main topic :: justification
+                  '''
+        main_topics = self.llm.invoke(prompt).content
+
+        return [topic for topic in main_topics.split('\n')]
     
     
     def identify_main_topic_relations(self, main_topic_list: list[str]) -> dict[str, list[str]]:
@@ -193,26 +205,33 @@ class LLM_Relation_Extractor:
         global retrieved_contexts
         retrieved_contexts = {}
 
-        # print(key_terms)
 
         for name in self.chapters:
-            # print('Chapter name:', name)
 
             key_terms = self.identify_key_terms(chapter_name = name, n_terms = 10) # 10 for now
             key_terms.append(name)
-            # print('Key terms:', key_terms)
 
             relevant_docs = invoke_retriever(' '.join(key_terms))
-            # print(relevant_docs)
-            # print(''.join([text.page_content for text in relevant_docs]))
             retrieved_contexts[name] = ''.join([text.page_content for text in relevant_docs])
-            # print(''.join([text.page_content for text in relevant_docs]))
-            # print(retrieved_contexts[name])
-            # print(f'Chapter: {name}, retrieved: {retrieved_contexts[name]}')
-            # break
 
-            current_concept = self.llm.invoke(f'Identify the ten most important learning concepts for chapter: {name}. The relevant documents can be found here: {relevant_docs}').content
-            # current_concept = self.llm.invoke(f'Identify the ten most important learning concepts from these documents: {relevant_docs}. Do not provide explanations, only list them.')
+            # single shot prompt 
+            single_prompt = f'''
+                             Identify the ten most important learning concepts for chapter: {name}. 
+                             The relevant documents can be found here: {relevant_docs}
+                             '''
+
+            # not sure how this works
+            few_shot_prompt = f''' 
+                               Q:
+                               A:
+
+                               Q:
+                               A:
+
+                               Q: 
+                               '''
+
+            current_concept = self.llm.invoke(single_prompt).content
 
             current_concept = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_concept)
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
@@ -270,6 +289,7 @@ class LLM_Relation_Extractor:
             current_concept = concept_dict[keys[i]][0]
             for j in range(i + 1, len(keys)):
                 next_concept = concept_dict[keys[j]][0]
+
                 relation = self.llm(f"Please identify if these concepts: {next_concept} are a prerequisite for these concepts: {current_concept}. If there is NO prerequisite, please respond with 'No' and 'No' only.")
                 relation = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', relation)
                 if relation.split(',')[0].strip() != 'No':
@@ -425,40 +445,53 @@ class LLM_Relation_Extractor:
         plt.show()
 
 
-    def validate(self, concepts: dict[str, list[str]], ground_truth: list[str], metrics: list, multi_turn: bool = False) -> list[SingleTurnSample]:
+    def evaluate(self, concepts: list[list[str]], ground_truth: list[str], metrics: list, multi_turn: bool = False) -> list[SingleTurnSample]:
         '''
-        Validate concepts from LLM  
+        Evaluate concepts or outcomes from LLM  
 
         Args:
-            prompt (str): the prompt the LLM was given
-            concepts (dict): LLM generated concepts from object link
+            concepts (dict): dictionary with chapter name as key and value as the list of concepts
             ground_truth (list): ground truth concepts 
-            stopword (str): first word where the textbook chapters end (usually appendix or bibliography)
             metrics (list, default None): list of metrics to use from ragas library
-            multi_turn (bool, default False): if True, use MultiTurnSample. Otherwise uses SingleTurnSample
+            multi_turn (bool, default False): if True, use MultiTurnSample() for evaluation
 
         Returns:
             list[SingleTurnSample]: list of samples used for evaluation  
         '''      
         samples = []
 
-        textbook = split(self.link, self.chapters, self.stopword) # for reference contexts
+        textbook = split(self.link, self.chapters, self.stopword) # for reference contexts. idk if this should stay or not tbh
         for i in range(len(ground_truth)):
-            samples.append(SingleTurnSample(
-                user_input = f'Identify the ten most important learning concepts for chapter: {self.chapters[i]}. The context can be found here: {retrieved_contexts[self.chapters[i]]}',
-                response = concepts[self.chapters[i]],
-                retrieved_contexts = [retrieved_contexts[self.chapters[i]]],
-                reference = ground_truth[i],
-                # reference_contexts = [textbook[self.chapters[i]]] # for now this is just the chapter text, maybe should remove
-            ))
+            if not multi_turn:
+                samples.append(SingleTurnSample(
+                    user_input = f'Identify the ten most important learning concepts for chapter: {self.chapters[i]}. The context can be found here: {retrieved_contexts[self.chapters[i]]}',
+                    response = ' '.join(concepts[i]),
+                    retrieved_contexts = [retrieved_contexts[self.chapters[i]]],
+                    reference = ground_truth[i],
+                    # reference_contexts = [textbook[self.chapters[i]]] # for now this is just the chapter text, maybe should remove
+                ))
+            else: # use multiturn samples with chain of thought (how? i dont get it)
+                # samples.append(MultiTurnSample(
+                #     user_input = []
+                # ))
+                pass
 
         dataset = EvaluationDataset(samples = samples)
 
        # i really dont like this evaluate() function. its been very inconsistent for me
         if metrics is None:
-            print(evaluate(dataset = dataset))
+            print(ev(dataset = dataset))
         else:
-            print(evaluate(dataset = dataset, metrics = metrics))
+            print(ev(dataset = dataset, metrics = metrics))
 
         return samples
+
+    
+    def extract_terminology(self, terms: list[str]) -> str:
+        prompt = f'''
+                Using the provided list of terms {' '.join(terms)}, identify the corresponding terminology from the textbook available at {self.link}.
+                '''
+        terminology = self.llm.invoke(prompt).content
+
+        return terminology.split('\n')
         

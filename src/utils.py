@@ -130,7 +130,7 @@ def split(link: str, chapters: list[str], stopword: str) -> dict[str, str]:
 
         # NOTE
         # maybe added paramter for these
-        # or, add a parameter for starting page
+        # or, add a parameter for starting page and ending page. seems like a better approach
         if 'Table of Contents' in full_t or 'Contents' in full_t or 'Preface' in full_t: 
             continue
     
@@ -225,7 +225,8 @@ def invoke_retriever(query: str) -> list[Document]:
     
     # return retriever.invoke(input = query)
     # return retriever.similarity_search(query = query)
-    return retriever.as_retriever(search_type = 'similarity').invoke(query)
+    # return retriever.as_retriever(search_type = 'similarity').invoke(query)
+    return retriever.similarity_search(query)
 
 
 def create_retriever(link: str) -> None:
