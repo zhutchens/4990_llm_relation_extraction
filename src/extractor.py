@@ -4,7 +4,7 @@ import os
 import re
 from IPython.display import display, Image
 from pyvis.network import Network
-# import hypernetx as hnx
+import hypernetx as hnx
 import matplotlib.pyplot as plt
 import graphlib
 from py3plex.core import multinet
@@ -12,10 +12,11 @@ from ragas import evaluate as ev
 from ragas import SingleTurnSample, MultiTurnSample
 from ragas.dataset_schema import EvaluationDataset
 from src.utils import create_concept_graph_structure, split, get_node_id_dict, create_retriever, invoke_retriever
+import networkx as nx
 
 
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
-class LLM_Relation_Extractor:
+class relationExtractor:
     def __init__(self, link: str, token: str, chapters: list[str], stopword: str):
         '''
         Constructor to create a large language model relation extractor class. 
@@ -36,38 +37,56 @@ class LLM_Relation_Extractor:
         create_retriever(self.link)
 
 
-    def identify_key_terms(self, chapter_name: str, n_terms: int) -> list[str]:
+    def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[str] = None) -> list[str] | list[list[str]]:
         '''
-        Identify the key terms for each chapter
+        Identify the key terms for a chapter or group of concepts
         
         Args:
-            chapter_name: name of chapter to get key terms for 
-            n_terms: number of key terms to use
+            n_terms (int): number of key terms to use
+            input_type (str, default chapter): if chapter, get key terms of a chapter. if concepts, get key terms for a list of concepts
+            chapter_name (str, default None): name of chapter to get key terms for 
+            concepts (list[str], default None): list of concepts to get key terms for
 
         Returns:
-            list[str]: key terms of chapter
+            list[str] if getting key terms for a chapter\n
+            list[list[str]] if getting key terms from a list of concepts
         '''
-        if chapter_name is None:
-            raise ValueError('chapter_name cannot be None')
+        if not isinstance(n_terms, int):
+            raise TypeError(f'n_terms must be int type, got {type(n_terms)}')
+
+        if concepts is None and chapter_name is None:
+            raise ValueError(f'chapter_name and concepts cannot both be None.')
         
-        prompt = f'''
-                Identify {n_terms} key terms from Chapter {chapter_name} in descending order of significance, listing the most significant terms first. The textbook is available here: {self.link}.
-                For each term, provide the following:
-                - Confidence Interval (CI)
-                - Corresponding Statistical Significance (p-value)
-                - A brief explanation of the term's relevance and importance
-                Format:
-                term :: confidence interval :: p-value :: explanation
-                '''
+        if input_type == 'chapter':
+            prompt = f'''
+                    Identify {n_terms} key terms from Chapter {chapter_name} in descending order of significance, listing the most significant terms first. The textbook is available here: {self.link}.
+                    For each term, provide the following:
+                    - Confidence Interval (CI),
+                    - Corresponding Statistical Significance (p-value),
+                    - A brief explanation of the term's relevance and importance,
+                    Format:
+                    term :: confidence interval :: p-value :: explanation
+                    '''
 
-        terms = self.llm.invoke(prompt).content 
+            terms = self.llm.invoke(prompt).content 
 
-        return [string for string in terms.split('\n') if string != '']
+            return [string for string in terms.split('\n') if string != '']
+
+        elif input_type == 'concepts':
+            concept_terms = []
+            for concept in concepts:
+                words = self.llm.invoke(f'Identify {n_terms} key terms for the following concept: {concept}.').content
+                concept_terms.append([string for string in words.split('\n') if string != ''])
+
+            return concept_terms
+
+        else:
+            raise ValueError(f'input_type value must be chapter or concepts, got {input_type}')
 
 
     def summarize(self) -> str:
         '''
-        Returns summary of class link
+        Returns summary of object web link
 
         Args:
             None
@@ -131,8 +150,7 @@ class LLM_Relation_Extractor:
         Returns:
             list[str]: list of main topics 
         '''
-        # main_topics = self.llm.invoke(f"Please identify the main topics from this textbook: {self.link}").content
-        # main_topics = self.llm.invoke(f'Please identify the main topics from this textbook: {self.link}. Please provide justification.'
+
         prompt = f'''
                     Please identify the main topics from this textbook: {self.link}. Please provide justification.
                     Format:
@@ -140,7 +158,7 @@ class LLM_Relation_Extractor:
                   '''
         main_topics = self.llm.invoke(prompt).content
 
-        return [topic for topic in main_topics.split('\n')]
+        return [topic for topic in main_topics.split('\n') if topic != '']
     
     
     def identify_main_topic_relations(self, main_topic_list: list[str]) -> dict[str, list[str]]:
@@ -173,21 +191,17 @@ class LLM_Relation_Extractor:
 
         Args:
             None
-        
+
         Returns:
-            list[list[str]]: list of outcomes for each chapter
+            list[list[str]]: list of learning outcomes
         '''
         outcome_list = []
-        current_outcome = ''
-    
         for name in self.chapters:
-            # current_outcome = self.llm.invoke(f"Please identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}")
-            current_outcome = self.llm.invoke(f'{self.outcome_prompt}, chapter name: {name}')
-            current_outcome = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_outcome)
-            outcome_list.append(current_outcome.split('\n'))
-        
+            response = self.llm.invoke(f"Please identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}").content
+            outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+
         return outcome_list
-    
+            
 
     def identify_concepts(self) -> list[list[str]]:
         '''
@@ -197,7 +211,7 @@ class LLM_Relation_Extractor:
             None
         
         Returns:
-            list: list of concepts for each chapter
+            list[list[str]]: list of concepts for each chapter
         '''
 
         concept_list = []
@@ -232,41 +246,74 @@ class LLM_Relation_Extractor:
                                '''
 
             current_concept = self.llm.invoke(single_prompt).content
-
-            current_concept = re.sub(re.compile('^[a-zA-Z\s\.,!?]'), '', current_concept)
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
 
         return concept_list
-        
 
-    def identify_associations(self, learning_dict: dict[str, tuple[str, str]]) -> dict[str, list[str]]:
+    
+    def get_assocations(self, first: list[list[str]] | list[str], second: list[list[str]] | list[str]) -> list[str]:
         '''
-        Identify associations between chapters. For example, if there is an association between Chapter 1 and 3 it will be added to the dictionary. The return dict contains chapter names as keys and the chapter names its associated with as values
+        Get the assocations between the first list and second list
 
         Args:
-            learning_dict (dict[str, tuple[str, str]]): The dictionary returned from the create_chapter_dict() function
+            first (list[list[str]] | list[str]): first list (concepts, key terms, outcomes, etc)
+            second (list[list[str]] | list[str]): second list (concepts, key terms, outcomes, etc)
 
         Returns:
-            dict[str, list[str]]: associations between chapters as adjacency list
+            list[tuple[str, str, str]]
         '''
-        association_dict = create_concept_graph_structure(param_list = list(learning_dict.keys()))
-        new_association = ''
-        values = list(learning_dict.values())
-        keys = list(learning_dict.keys())
+        associations = []
 
-        # NOTE: I think this algorithm is wrong? Maybe its better to loop through in reverse order (Ex. start with the last chapter and work downwards)
-        for i in range(len(values)):
-            current_tuple = values[i]
-            for j in range(len(values)):
-                if i != j:
-                    next_tuple = values[j]
-                    new_association = self.llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
-                    new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
-                    # Try to only add associations to the graph, but its difficult because sometimes the llm won't start its response with 'No'
-                    if new_association.split(',')[0].strip() != 'No':
-                        association_dict[keys[i]].append(keys[j])
+        for f in first:
+            if isinstance(f, list):
+                f = ' '.join(f)
+
+            for s in second:
+                if isinstance(s, list):
+                    s = ' '.join(s)
+
+                prompt = f'''
+                        Identify if there is some assocation between {f} and {s}. If there is an assocation, your response should ONLY include the keywords of the assocation. 
+                        Otherwise, respond with No and No only.
+                        '''
+                response = self.llm.invoke(prompt).content
+
+                print(response)
+                if response.lower() != 'no':
+                    associations.append((f, s, response))
+
+        return associations
+
+        
+
+    # def get_associations(self, learning_dict: dict[str, tuple[str, str]]) -> dict[str, list[str]]:
+    #     '''
+    #     Identify associations between chapters. For example, if there is an association between Chapter 1 and 3 it will be added to the dictionary. The return dict contains chapter names as keys and the chapter names its associated with as values
+
+    #     Args:
+    #         learning_dict (dict[str, tuple[str, str]]): The dictionary returned from the create_chapter_dict() function
+
+    #     Returns:
+    #         dict[str, list[str]]: associations between chapters as adjacency list
+    #     '''
+    #     association_dict = create_concept_graph_structure(param_list = list(learning_dict.keys()))
+    #     new_association = ''
+    #     values = list(learning_dict.values())
+    #     keys = list(learning_dict.keys())
+
+    #     # NOTE: I think this algorithm is wrong? Maybe its better to loop through in reverse order (Ex. start with the last chapter and work downwards)
+    #     for i in range(len(values)):
+    #         current_tuple = values[i]
+    #         for j in range(len(values)):
+    #             if i != j:
+    #                 next_tuple = values[j]
+    #                 new_association = self.llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
+    #                 new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
+    #                 # Try to only add associations to the graph, but its difficult because sometimes the llm won't start its response with 'No'
+    #                 if new_association.split(',')[0].strip() != 'No':
+    #                     association_dict[keys[i]].append(keys[j])
             
-        return association_dict
+    #     return association_dict
 
 
     def identify_dependencies(self, concept_dict: dict[str, list[str]]) -> dict[str, list[str]]:
@@ -370,7 +417,6 @@ class LLM_Relation_Extractor:
         for chapter_name, chapter_id in node_id_dict.items():
             dependency_graph.add_node(n_id = chapter_id, label = chapter_name)
 
-
         for key, values in dependency_dict.items():
             for value in values:
                 dependency_graph.add_edge(node_id_dict[key], node_id_dict[value])
@@ -404,7 +450,7 @@ class LLM_Relation_Extractor:
         plt.show()
 
 
-    def draw_multi_layered_graph(self, dictionary: dict[str, list[str]]) -> None:
+    def draw_layered_graph(self, dictionary: dict[str, list[str]]) -> None:
         '''
         Generate and display a multilayered graph given a dependency dictionary generated from identify_dependencies() or association dict generated by identify_associations()
 
@@ -478,7 +524,6 @@ class LLM_Relation_Extractor:
 
         dataset = EvaluationDataset(samples = samples)
 
-       # i really dont like this evaluate() function. its been very inconsistent for me
         if metrics is None:
             print(ev(dataset = dataset))
         else:
@@ -486,12 +531,52 @@ class LLM_Relation_Extractor:
 
         return samples
 
-    
-    def extract_terminology(self, terms: list[str]) -> str:
-        prompt = f'''
-                Using the provided list of terms {' '.join(terms)}, identify the corresponding terminology from the textbook available at {self.link}.
-                '''
-        terminology = self.llm.invoke(prompt).content
 
-        return terminology.split('\n')
+    def build_terminology(self, concept_terms: list[list[str]]) -> list[str]:
+        '''
+        Build a terminology using is-a relationships between key terms
+
+        Args:
+            key_terms (list[str]): key terms to use
+
+        Returns:
+            list[str]: terminology 
+        '''
+        terminology = []
+        concept_terms = [word for concepts in concept_terms for word in concepts]
+
+        for i in range(len(concept_terms)):
+            for j in range(len(concept_terms)):
+                if i != j:
+                    prompt = f'''
+                            Q: Is there an is-a relationship present between dog and mammal?
+                            A: Yes
+
+                            Q: Is there an is-a relationship present between vehicle and car?
+                            A: No
+
+                            Q: Is there an is-a relationship presnet between {concept_terms[i]} and {concept_terms[j]}?
+                            '''
+                    response = self.llm.invoke(prompt).content
+                    if 'yes' in response.lower():
+                        terminology.append((concept_terms[i], concept_terms[j]))
+
+        return terminology
+
+
+    def build_KG(self) -> nx.Graph:
+        '''
+        Builds a knowledge using learning concepts, outcomes, and key terms
+
+        Args:
+            concepts (): learning concepts
+            outcomes (): learning outcomes
+            key_terms (): key_terms for chapters
         
+        Returns:
+            Graph: networkx object 
+        '''
+        kg = nx.Graph()
+
+
+        return kg

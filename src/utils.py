@@ -1,9 +1,6 @@
 from urllib.request import urlopen
-from nltk import word_tokenize 
-# from nltk.tokenize import sent_tokenize
 import pymupdf
 from io import BytesIO
-# from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.vectorstores.in_memory import InMemoryVectorStore
@@ -221,10 +218,8 @@ def invoke_retriever(query: str) -> list[Document]:
 
     # this should never happen but just in case!
     if not retriever:
-        raise ValueError(f'Please run create_retriever() first before invoking it.')
+        raise ValueError(f'Run create_retriever() first before invoking it.')
     
-    # return retriever.invoke(input = query)
-    # return retriever.similarity_search(query = query)
     # return retriever.as_retriever(search_type = 'similarity').invoke(query)
     return retriever.similarity_search(query)
 
@@ -242,10 +237,7 @@ def create_retriever(link: str) -> None:
         None
     '''
     
-    # texts = split(link, chapters, stopword)
     strings = lc_split(link)
-
-    # print(f'Creating retriever with docs: {docs}')
 
     docs = []
     global retriever
@@ -253,6 +245,5 @@ def create_retriever(link: str) -> None:
     for string in strings:
         docs.append(Document(page_content = string))
 
-    # retriever = BM25Retriever.from_documents(docs)
     retriever = InMemoryVectorStore(embedding = OpenAIEmbeddings())
     retriever.add_documents(documents = docs)
