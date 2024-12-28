@@ -37,7 +37,7 @@ class relationExtractor:
         create_retriever(self.link)
 
 
-    def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[str] = None) -> list[str] | list[list[str]]:
+    def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[str] = None) -> list[str] | dict[str, list[str]]:
         '''
         Identify the key terms for a chapter or group of concepts
         
@@ -48,14 +48,14 @@ class relationExtractor:
             concepts (list[str], default None): list of concepts to get key terms for
 
         Returns:
-            list[str] if getting key terms for a chapter\n
-            list[list[str]] if getting key terms from a list of concepts
+            list[str]: if getting key terms for a chapter\n
+            dict[str, list[str]]: if getting key terms from a list of concepts
         '''
         if not isinstance(n_terms, int):
             raise TypeError(f'n_terms must be int type, got {type(n_terms)}')
 
         if concepts is None and chapter_name is None:
-            raise ValueError(f'chapter_name and concepts cannot both be None.')
+            raise ValueError(f'chapter_name and concepts cannot both be None')
         
         if input_type == 'chapter':
             prompt = f'''
@@ -73,10 +73,10 @@ class relationExtractor:
             return [string for string in terms.split('\n') if string != '']
 
         elif input_type == 'concepts':
-            concept_terms = []
+            concept_terms = {}
             for concept in concepts:
                 words = self.llm.invoke(f'Identify {n_terms} key terms for the following concept: {concept}.').content
-                concept_terms.append([string for string in words.split('\n') if string != ''])
+                concept_terms[concept] = [string for string in words.split('\n') if string != '']
 
             return concept_terms
 
@@ -94,7 +94,7 @@ class relationExtractor:
         Returns:
             str: summary of textbook
         '''
-        return self.llm.invoke(f"Please summarize this textbook {self.link}").content
+        return self.llm.invoke(f"Please summarize this web page: {self.link}").content
 
 
     def create_chapter_dict(self, outcomes: list[str], concepts: list[str]) -> dict[str, tuple[str, str]]:
@@ -185,23 +185,45 @@ class relationExtractor:
         return topic_relations
 
     
-    def identify_outcomes(self) -> list[list[str]]:
+    def identify_outcomes(self, concepts: list[list[str]] = None, key_terms: dict[str, list[str]] = None) -> list[list[str]]:
         '''
-        Identify the main learning outcomes within the class provided link
+        Identify main learning outcomes within the class provided link. If concepts and key_terms are both None, get key terms from web link content
 
         Args:
-            None
+            concepts (list[list[str]]):
+            key_terms (dict[str, list[str]]): 
+            
 
         Returns:
             list[list[str]]: list of learning outcomes
         '''
         outcome_list = []
-        for name in self.chapters:
-            response = self.llm.invoke(f"Please identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}").content
-            outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
 
-        return outcome_list
+        if concepts is None and key_terms is None:
+            for name in self.chapters:
+                response = self.llm.invoke(f"Identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}").content
+                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+
+            return outcome_list
+        
+        elif concepts is not None and key_terms is None:
+            for concept in concepts:
+                concept = ' '.join(concept)
+                response = self.llm.invoke(f'Identify the main learning outcomes from these concepts: {concept}').content
+                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
             
+            return outcome_list
+
+        elif concepts is None and key_terms is not None:
+            for k in key_terms.keys():
+                terms = ' '.join(key_terms[k])
+                response = self.llm.invoke(f'Identify the main learning outcomes given this concept {k} and these key terms {terms}')
+                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+
+            return outcome_list
+        else:
+            raise ValueError(f'concepts and key_terms cannot both have a value. one of them must be None')
+
 
     def identify_concepts(self) -> list[list[str]]:
         '''
@@ -235,15 +257,15 @@ class relationExtractor:
                              '''
 
             # not sure how this works
-            few_shot_prompt = f''' 
-                               Q:
-                               A:
+            # few_shot_prompt = f''' 
+            #                    Q:
+            #                    A:
 
-                               Q:
-                               A:
+            #                    Q:
+            #                    A:
 
-                               Q: 
-                               '''
+            #                    Q: 
+            #                    '''
 
             current_concept = self.llm.invoke(single_prompt).content
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
@@ -251,69 +273,38 @@ class relationExtractor:
         return concept_list
 
     
-    def get_assocations(self, first: list[list[str]] | list[str], second: list[list[str]] | list[str]) -> list[str]:
-        '''
-        Get the assocations between the first list and second list
-
-        Args:
-            first (list[list[str]] | list[str]): first list (concepts, key terms, outcomes, etc)
-            second (list[list[str]] | list[str]): second list (concepts, key terms, outcomes, etc)
-
-        Returns:
-            list[tuple[str, str, str]]
-        '''
-        associations = []
-
-        for f in first:
-            if isinstance(f, list):
-                f = ' '.join(f)
-
-            for s in second:
-                if isinstance(s, list):
-                    s = ' '.join(s)
-
-                prompt = f'''
-                        Identify if there is some assocation between {f} and {s}. If there is an assocation, your response should ONLY include the keywords of the assocation. 
-                        Otherwise, respond with No and No only.
-                        '''
-                response = self.llm.invoke(prompt).content
-
-                print(response)
-                if response.lower() != 'no':
-                    associations.append((f, s, response))
-
-        return associations
-
-        
-
-    # def get_associations(self, learning_dict: dict[str, tuple[str, str]]) -> dict[str, list[str]]:
+    # def get_assocations(self, first: list[list[str]] | list[str], second: list[list[str]] | list[str]) -> list[str]:
     #     '''
-    #     Identify associations between chapters. For example, if there is an association between Chapter 1 and 3 it will be added to the dictionary. The return dict contains chapter names as keys and the chapter names its associated with as values
+    #     Get the assocations between the first list and second list
 
     #     Args:
-    #         learning_dict (dict[str, tuple[str, str]]): The dictionary returned from the create_chapter_dict() function
+    #         first (list[list[str]] | list[str]): first list (concepts, key terms, outcomes, etc)
+    #         second (list[list[str]] | list[str]): second list (concepts, key terms, outcomes, etc)
 
     #     Returns:
-    #         dict[str, list[str]]: associations between chapters as adjacency list
+    #         list[tuple[str, str, str]]
     #     '''
-    #     association_dict = create_concept_graph_structure(param_list = list(learning_dict.keys()))
-    #     new_association = ''
-    #     values = list(learning_dict.values())
-    #     keys = list(learning_dict.keys())
+    #     associations = []
 
-    #     # NOTE: I think this algorithm is wrong? Maybe its better to loop through in reverse order (Ex. start with the last chapter and work downwards)
-    #     for i in range(len(values)):
-    #         current_tuple = values[i]
-    #         for j in range(len(values)):
-    #             if i != j:
-    #                 next_tuple = values[j]
-    #                 new_association = self.llm(f"Please identify if there is an association between this concept: {current_tuple[0]}, and this other concept: {next_tuple[0]}. If there is NO association, please start your response with 'No' and 'No' only.")
-    #                 new_association = re.sub(re.compile('[^a-zA-Z\s\.,!?]'), '', new_association)
-    #                 # Try to only add associations to the graph, but its difficult because sometimes the llm won't start its response with 'No'
-    #                 if new_association.split(',')[0].strip() != 'No':
-    #                     association_dict[keys[i]].append(keys[j])
-            
-    #     return association_dict
+    #     for f in first:
+    #         if isinstance(f, list):
+    #             f = ' '.join(f)
+
+    #         for s in second:
+    #             if isinstance(s, list):
+    #                 s = ' '.join(s)
+
+    #             prompt = f'''
+    #                     Identify if there is some assocation between {f} and {s}. If there is an assocation, your response should ONLY include the keywords of the assocation. 
+    #                     Otherwise, respond with No and No only.
+    #                     '''
+    #             response = self.llm.invoke(prompt).content
+
+    #             print(response)
+    #             if response.lower() != 'no':
+    #                 associations.append((f, s, response))
+
+    #     return associations
 
 
     def identify_dependencies(self, concept_dict: dict[str, list[str]]) -> dict[str, list[str]]:
