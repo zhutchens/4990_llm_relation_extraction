@@ -24,12 +24,10 @@ Using Linux, activate python virtual environment using:<br/>
 ```
 source env/bin/activate
 ```
-<br/>
 Using Windows Powershell, activate python virtual environment using:
 ```
 .\venv\Scripts\activate
 ```
-<br/>
 or, if you are using Windows with a Unix-like CLI:
 ```
 source env/Scripts/activate
@@ -44,12 +42,10 @@ Using pip, install packages using:
 ```
 pip install -r requirements.
 ```
-<br/>
 Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:
 ```
 conda install pip
 ```
-<br/>
 Then, install packages:
 ```
 pip install -r requirements.txt
