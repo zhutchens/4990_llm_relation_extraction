@@ -1,13 +1,24 @@
 # Environment Setup
 Create a virtual environment using pip or conda:<br/>
 Using Linux with pip:<br/>
-```python3 -m venv env```<br/>
+```
+python3 -m venv env
+```
+<br/>
 Using Linux with conda:<br/>
-```conda create -n env python=3.10.12 anaconda```<br/>
+```
+conda create -n env python=3.10.12 anaconda
+```
+<br/>
 Using Windows with pip:<br/>
-```python -m venv env```<br/>
+```
+python -m venv env
+```
+<br/>
 Using Windows with conda:<br/>
-```conda create -n env python=3.10.12 anaconda```
+```
+conda create -n env python=3.10.12 anaconda
+```
 
 # Activation and package installation
 ## Activation
