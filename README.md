@@ -5,17 +5,17 @@ Using Linux with pip:<br/>
 python3 -m venv env
 ```
 <br/>
-Using Linux with conda:<br/>
+Using Linux with conda:
 ```
 conda create -n env python=3.10.12 anaconda
 ```
 <br/>
-Using Windows with pip:<br/>
+Using Windows with pip:
 ```
 python -m venv env
 ```
 <br/>
-Using Windows with conda:<br/>
+Using Windows with conda:
 ```
 conda create -n env python=3.10.12 anaconda
 ```
@@ -28,32 +28,32 @@ Using Linux, activate python virtual environment using:<br/>
 source env/bin/activate
 ```
 <br/>
-Using Windows Powershell, activate python virtual environment using:<br/>
+Using Windows Powershell, activate python virtual environment using:
 ```
 .\venv\Scripts\activate
 ```
 <br/>
-or, if you are using Windows with a Unix-like CLI:<br/>
+or, if you are using Windows with a Unix-like CLI:
 ```
 source env/Scripts/activate
 ```
 ### Conda
-On Windows and Linux, activate conda virtual environment using:<br/>
+On Windows and Linux, activate conda virtual environment using:
 ```
 conda activate env
 ```
 ## Package Installation
-Using pip, install packages using:<br/>
+Using pip, install packages using:
 ```
 pip install -r requirements.
 ```
 <br/>
-Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:<br/>
+Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:
 ```
 conda install pip
 ```
 <br/>
-Then, install packages:<br/>
+Then, install packages:
 ```
 pip install -r requirements.txt
 ```
