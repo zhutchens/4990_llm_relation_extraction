@@ -247,28 +247,15 @@ class relationExtractor:
 
         for name in self.chapters:
 
-            key_terms = self.identify_key_terms(chapter_name = name, n_terms = 10) # 10 for now
-            key_terms.append(name)
-
-            relevant_docs = invoke_retriever(' '.join(key_terms))
-            retrieved_contexts[name] = ''.join([text.page_content for text in relevant_docs])
-
+            relevant_docs = invoke_retriever(f'Identify the ten most important learning concepts for chapter: {name}.')
+            
             # single shot prompt 
             single_prompt = f'''
                              Identify the ten most important learning concepts for chapter: {name}. 
                              The relevant documents can be found here: {relevant_docs}
                              '''
 
-            # not sure how this works
-            # few_shot_prompt = f''' 
-            #                    Q:
-            #                    A:
-
-            #                    Q:
-            #                    A:
-
-            #                    Q: 
-            #                    '''
+            retrieved_contexts[name] = ''.join([text.page_content for text in relevant_docs])
 
             current_concept = self.llm.invoke(single_prompt).content
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
