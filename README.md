@@ -40,7 +40,7 @@ conda activate env
 ## Package Installation
 Using pip, install packages using:
 ```
-pip install -r requirements.
+pip install -r requirements.txt
 ```
 Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:
 ```
