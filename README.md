@@ -1,33 +1,33 @@
 # Environment Setup
 Create a virtual environment using pip or conda:<br/>
 Using Linux with pip:<br/>
-`python3 -m venv env`<br/>
+```python3 -m venv env```<br/>
 Using Linux with conda:<br/>
-`conda create -n env python=3.10.12 anaconda`<br/>
+```conda create -n env python=3.10.12 anaconda```<br/>
 Using Windows with pip:<br/>
-`python -m venv env`<br/>
+```python -m venv env```<br/>
 Using Windows with conda:<br/>
-`conda create -n env python=3.10.12 anaconda`
+```conda create -n env python=3.10.12 anaconda```
 
 # Activation and package installation
 ## Activation
 ### Pip
 Using Linux, activate python virtual environment using:<br/>
-`source env/bin/activate`<br/>
+```source env/bin/activate```<br/>
 Using Windows Powershell, activate python virtual environment using:<br/>
-`.\venv\Scripts\activate`<br/>
+```.\venv\Scripts\activate```<br/>
 or, if you are using Windows with a Unix-like CLI:<br/>
-`source env/Scripts/activate`
+```source env/Scripts/activate```
 ### Conda
 On Windows and Linux, activate conda virtual environment using:<br/>
-`conda activate env`
+```conda activate env```
 ## Package Installation
 Using pip, install packages using:<br/>
-`pip install -r requirements.txt`<br/>
+```pip install -r requirements.```<br/>
 Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:<br/>
-`conda install pip`<br/>
+```conda install pip```<br/>
 Then, install packages:<br/>
-`pip install -r requirements.txt'
+```pip install -r requirements.txt``'
 
 # data
 Concepts for data structures course. Sorting file is only concepts for searching and sorting chapters
