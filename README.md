@@ -10,21 +10,21 @@ Using Windows:
 ## Activation and package installation
 ### Activation
 #### Pip
-Using Linux, activate python virtual environment using:
-`source env/bin/activate`
-Using Windows Powershell, activate python virtual environment using:
-`.\venv\Scripts\activate`
-or, if you are using Windows with a Unix-like CLI:
+Using Linux, activate python virtual environment using:<br/>
+`source env/bin/activate`<br/>
+Using Windows Powershell, activate python virtual environment using:<br/>
+`.\venv\Scripts\activate`<br/>
+or, if you are using Windows with a Unix-like CLI:<br/>
 `source env/Scripts/activate`
 #### Conda
-On Windows and Linux, activate conda virtual environment using:
+On Windows and Linux, activate conda virtual environment using:<br/>
 `conda activate env`
 ### Package Installation
-Using pip, install packages using:
-`pip install -r requirements.txt`
-Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:
-`conda install pip`
-Then, install packages:
+Using pip, install packages using:<br/>
+`pip install -r requirements.txt`<br/>
+Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:<br/>
+`conda install pip`<br/>
+Then, install packages:<br/>
 `pip install -r requirements.txt'
 
 # data
