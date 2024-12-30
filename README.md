@@ -13,21 +13,39 @@ Using Windows with conda:<br/>
 ## Activation
 ### Pip
 Using Linux, activate python virtual environment using:<br/>
-```source env/bin/activate```<br/>
+```
+source env/bin/activate
+```
+<br/>
 Using Windows Powershell, activate python virtual environment using:<br/>
-```.\venv\Scripts\activate```<br/>
+```
+.\venv\Scripts\activate
+```
+<br/>
 or, if you are using Windows with a Unix-like CLI:<br/>
-```source env/Scripts/activate```
+```
+source env/Scripts/activate
+```
 ### Conda
 On Windows and Linux, activate conda virtual environment using:<br/>
-```conda activate env```
+```
+conda activate env
+```
 ## Package Installation
 Using pip, install packages using:<br/>
-```pip install -r requirements.```<br/>
+```
+pip install -r requirements.
+```
+<br/>
 Conda uses an environment.yaml file to specify dependencies instead of requirements.txt, so install pip first:<br/>
-```conda install pip```<br/>
+```
+conda install pip
+```
+<br/>
 Then, install packages:<br/>
-```pip install -r requirements.txt``'
+```
+pip install -r requirements.txt
+```
 
 # data
 Concepts for data structures course. Sorting file is only concepts for searching and sorting chapters
