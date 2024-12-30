@@ -37,7 +37,7 @@ class relationExtractor:
         create_retriever(self.link)
 
 
-    def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[str] = None) -> list[str] | dict[str, list[str]]:
+    def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[list[str]] = None) -> list[str] | dict[str, list[str]]:
         '''
         Identify the key terms for a chapter or group of concepts
         
@@ -72,10 +72,13 @@ class relationExtractor:
 
             return [string for string in terms.split('\n') if string != '']
 
+        # step 2
         elif input_type == 'concepts':
             concept_terms = {}
             for concept in concepts:
-                words = self.llm.invoke(f'Identify {n_terms} key terms for the following concept: {concept}.').content
+                concept = ' '.join(concept)
+                # prompt should include concepts, web link, and documents from retrieval mechanism
+                words = self.llm.invoke(f'Identify {n_terms} key terms for the following concept: {concept}. ').content
                 concept_terms[concept] = [string for string in words.split('\n') if string != '']
 
             return concept_terms
@@ -185,28 +188,28 @@ class relationExtractor:
         return topic_relations
 
     
-    def identify_outcomes(self, concepts: list[list[str]] = None, key_terms: dict[str, list[str]] = None) -> list[list[str]]:
+    def identify_outcomes(self, concepts: list[list[str]] = None, concepts_keyTerms: dict[str, list[str]] = None) -> list[list[str]] | dict[tuple[str, str], list[str]]:
         '''
-        Identify main learning outcomes within the class provided link. If concepts and key_terms are both None, get key terms from web link content
+        Identify main learning outcomes within the class provided link. If concepts and concepts_KeyTerms are both None, get outcomes from web link content
 
         Args:
-            concepts (list[list[str]]):
-            key_terms (dict[str, list[str]]): 
+            concepts (list[list[str]]): list of concepts from identify_concepts()
+            concepts_keyTerms (dict[str, list[str]]): dictionary of concepts and key_terms from identify_key_terms
             
-
         Returns:
-            list[list[str]]: list of learning outcomes
+            list[list[str]]: list of learning outcomes for each concept (or for each chapter if both args are None)\n
+            dict[tuple[str, str], list[str]]: main concept and terms as key, list of outcomes as value
         '''
         outcome_list = []
 
-        if concepts is None and key_terms is None:
+        if concepts is None and concepts_keyTerms is None:
             for name in self.chapters:
                 response = self.llm.invoke(f"Identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}").content
                 outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
 
             return outcome_list
         
-        elif concepts is not None and key_terms is None:
+        elif concepts is not None and concepts_keyTerms is None:
             for concept in concepts:
                 concept = ' '.join(concept)
                 response = self.llm.invoke(f'Identify the main learning outcomes from these concepts: {concept}').content
@@ -214,11 +217,13 @@ class relationExtractor:
             
             return outcome_list
 
-        elif concepts is None and key_terms is not None:
-            for k in key_terms.keys():
-                terms = ' '.join(key_terms[k])
-                response = self.llm.invoke(f'Identify the main learning outcomes given this concept {k} and these key terms {terms}')
-                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+        elif concepts is None and concepts_keyTerms is not None:
+            outcome_list = {}
+            for k in concepts_keyTerms.keys():
+                terms = ' '.join(concepts_keyTerms[k])
+                response = self.llm.invoke(f'Identify the main learning outcomes given this concept {k} and these key terms {terms}').content
+
+                outcome_list[(k, terms)] = [outcome for outcome in response.split('\n') if outcome != '']
 
             return outcome_list
         else:
@@ -233,14 +238,12 @@ class relationExtractor:
             None
         
         Returns:
-            list[list[str]]: list of concepts for each chapter
+            tuple[dict[str, str], list[list[str]]]: retrieved contexts and list of concepts for each chapter
         '''
 
         concept_list = []
         current_concept = ''
-        global retrieved_contexts
         retrieved_contexts = {}
-
 
         for name in self.chapters:
 
@@ -270,7 +273,7 @@ class relationExtractor:
             current_concept = self.llm.invoke(single_prompt).content
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
 
-        return concept_list
+        return retrieved_contexts, concept_list
 
     
     # def get_assocations(self, first: list[list[str]] | list[str], second: list[list[str]] | list[str]) -> list[str]:
@@ -506,36 +509,72 @@ class relationExtractor:
         fig.show()
 
 
-    def evaluate(self, concepts: list[list[str]], ground_truth: list[str], metrics: list, multi_turn: bool = False) -> list[SingleTurnSample]:
+    # TODO: function needs a lotta work
+    def evaluate(self, 
+                type_eval: str, 
+                generated: list[list[str]] | dict[str, list[str]], 
+                ground_truth: list[str], 
+                data: list[list[str]] | dict[str, list[str]],
+                metrics: list = None, 
+                outcomes_from: str = None,
+                n_terms: int = None) -> list[SingleTurnSample]:
         '''
-        Evaluate concepts or outcomes from LLM  
+        Evaluate concepts or outcomes generated from the large language model  
 
         Args:
-            concepts (dict): dictionary with chapter name as key and value as the list of concepts
+            type_eval (str): concepts to evaluate concepts, outcomes to evaluate outcomes, terms to evaluate key terms
+            generated (list[list[str]] | dict[str, list[str]]): dictionary with chapter name as key and value as the list of concepts
             ground_truth (list): ground truth concepts 
+            data (list[list[str]] | dict[str, list[str]]): data given to function that identifies terms, concepts, or outcomes
             metrics (list, default None): list of metrics to use from ragas library
-            multi_turn (bool, default False): if True, use MultiTurnSample() for evaluation
+            outcomes_from (str, default None): where outcomes were retrieved from (chapters, concepts, or CKT if they were generated from concepts and key terms)
+            n_terms (int, default None): number of key terms generated per concept or chapter if evaluating key terms
 
         Returns:
             list[SingleTurnSample]: list of samples used for evaluation  
         '''      
         samples = []
+        if type_eval == 'outcomes' and outcomes_from is None:
+            raise ValueError(f'if evaluating outcomes, outcomes_from value cannot be None')
 
-        textbook = split(self.link, self.chapters, self.stopword) # for reference contexts. idk if this should stay or not tbh
+        if isinstance(data, dict):
+            keys = list(data.keys())
+
+        if isinstance(generated, dict):
+            values = list(generated.values())
+
+
         for i in range(len(ground_truth)):
-            if not multi_turn:
-                samples.append(SingleTurnSample(
-                    user_input = f'Identify the ten most important learning concepts for chapter: {self.chapters[i]}. The context can be found here: {retrieved_contexts[self.chapters[i]]}',
-                    response = ' '.join(concepts[i]),
-                    retrieved_contexts = [retrieved_contexts[self.chapters[i]]],
-                    reference = ground_truth[i],
-                    # reference_contexts = [textbook[self.chapters[i]]] # for now this is just the chapter text, maybe should remove
-                ))
-            else: # use multiturn samples with chain of thought (how? i dont get it)
-                # samples.append(MultiTurnSample(
-                #     user_input = []
-                # ))
-                pass
+            if type_eval == 'concepts': # concepts always come from web chapters
+                prompt = f'Identify the most important learning {type_eval} for chapter: {self.chapters[i]}. The relevant documents can be found here: {data[keys[i]]}'            
+                retrieved = data[keys[i]]
+
+            elif type_eval == 'outcomes' and outcomes_from == 'concepts':
+                concept = ' '.join(data[i])
+                prompt = f'Identify the main learning {type_eval} from these concepts: {concept}'
+                retrieved = ' '.join(data[i])
+
+            elif type_eval == 'outcomes' and outcomes_from == 'CKT':
+                terms = ' '.join(data[keys[i]])
+                prompt = f'Identify the main learning {type_eval} given these concepts {keys[i]} and these key terms {terms}'
+                retrieved = keys[i] + ' ' + terms
+            
+            elif type_eval == 'terms':
+                concept = ' '.join(data[i])
+                prompt = f'Identify {n_terms} key terms for the following concept: {data[i]}.'
+                retrieved = ' '.join(data[i])
+            
+            else:
+                raise ValueError(f'invalid parameter arguments, check function description')
+
+
+            samples.append(SingleTurnSample(
+                user_input = prompt,
+                response = ' '.join(generated[i]) if not isinstance(generated, dict) else ' '.join(values[i]),
+                retrieved_contexts = [retrieved],
+                reference = ground_truth[i],
+                # reference_contexts = [textbook[self.chapters[i]]] # for now this is just the chapter text, maybe should remove
+            ))
 
         dataset = EvaluationDataset(samples = samples)
 
