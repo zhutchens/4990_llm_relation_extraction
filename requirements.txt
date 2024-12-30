@@ -37,7 +37,7 @@ h11==0.14.0
 httpcore==1.0.5
 httpx==0.27.0
 huggingface-hub==0.26.5
-hypernetx==2.3.5
+hypernetx
 idna==3.7
 igraph==0.11.6
 ipykernel==6.29.5
@@ -67,8 +67,9 @@ mizani==0.11.4
 multidict==6.0.5
 multiprocess==0.70.16
 mypy-extensions==1.0.0
+narwhals==1.19.1
 nest-asyncio==1.6.0
-networkx==3.3
+networkx
 nltk==3.9.1
 numpy==1.26.4
 openai==1.57.3
@@ -80,13 +81,14 @@ patsy==0.5.6
 pexpect==4.9.0
 pillow==10.4.0
 platformdirs==4.2.2
+plotly==6.0.0rc0
 plotnine==0.10.1
 prompt_toolkit==3.0.47
 propcache==0.2.1
 psutil==6.0.0
 ptyprocess==0.7.0
 pure-eval==0.2.2
-py3plex==0.95
+py3plex
 pyarrow==18.1.0
 pydantic==2.8.2
 pydantic_core==2.20.1

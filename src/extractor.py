@@ -13,7 +13,7 @@ from ragas import SingleTurnSample, MultiTurnSample
 from ragas.dataset_schema import EvaluationDataset
 from src.utils import create_concept_graph_structure, split, get_node_id_dict, create_retriever, invoke_retriever
 import networkx as nx
-
+import plotly.express as px
 
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class relationExtractor:
@@ -480,6 +480,30 @@ class relationExtractor:
         multi_graph.visualize_network(style = "diagonal")
         plt.title("Multilayered Dependency Graph")
         plt.show()
+
+    
+    def plot_sunburst(names: list[str], parents: list[str], values: list[int]) -> None:
+        '''
+        Plots a sunburst chart 
+
+        Args:
+            names (list[str]): labels of sectors 
+            parents (list[str]): parental values to use in sunburst chart 
+            values (list[int]): sector size values
+        
+        Returns:
+            None
+        '''
+        if len(names) != len(parents) or len(names) != len(values) or len(parents) != len(values):
+            raise ValueError(f'list lengths must be the same')
+        
+        fig = px.sunburst(
+            names = names,
+            parents = parents,
+            values = values
+        )
+
+        fig.show()
 
 
     def evaluate(self, concepts: list[list[str]], ground_truth: list[str], metrics: list, multi_turn: bool = False) -> list[SingleTurnSample]:
