@@ -1,8 +1,12 @@
 # Environment Setup
 Create a virtual environment using pip or conda:<br/>
-Using pip:
+Using Linux with pip:
 ```
 python3 -m venv env
+```
+Using Windows with pip:
+```
+python -m venv env
 ```
 Using conda:
 ```
