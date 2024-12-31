@@ -15,14 +15,14 @@ conda create -n env python=3.10.12 anaconda
 
 # Activation and package installation
 ## Activation
-### Pip
+### Python
 Using Linux, activate python virtual environment using:<br/>
 ```
 source env/bin/activate
 ```
 Using Windows Powershell, activate python virtual environment using:
 ```
-.\venv\Scripts\activate
+.\env\Scripts\activate
 ```
 or, if you are using Windows with a Unix-like CLI:
 ```
