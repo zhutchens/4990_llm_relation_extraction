@@ -9,15 +9,59 @@ import matplotlib.pyplot as plt
 import graphlib
 from py3plex.core import multinet
 from ragas import evaluate as ev
-from ragas import SingleTurnSample, MultiTurnSample
+from ragas import SingleTurnSample
 from ragas.dataset_schema import EvaluationDataset
-from src.utils import create_concept_graph_structure, split, get_node_id_dict, create_retriever, invoke_retriever
 import networkx as nx
 import plotly.express as px
+from src.retrieval import RetrievalSystem
+from pandas import DataFrame
+from ragas.testset import TestsetGenerator
+from src.transformerEmbeddings import TransformerEmbeddings
+from ragas.embeddings import LangchainEmbeddingsWrapper
+from ragas.llms import LangchainLLMWrapper
+from langchain_core.documents import Document
+from src.utils import rank_docs
+
+
+def create_concept_graph_structure(param_list: list) -> dict:
+    return_dict = {}
+
+    for list_itm in param_list:
+        return_dict[list_itm] = []
+
+    return return_dict
+
+
+def get_node_id_dict(dictionary: dict) -> dict:
+    
+    node_id_dict = {}
+    id_count = 1
+    
+    for name in dictionary.keys():
+        node_id_dict[name] = id_count
+        id_count += 1
+
+    return node_id_dict    
+
 
 # NOTE: Currently one main issue, the function that finds the associations between chapters seems to be broken. I think its the algorithm thats wrong. It also takes 10+ minutes to run
 class relationExtractor:
-    def __init__(self, link: str, token: str, chapters: list[str], stopword: str):
+    '''
+    
+    '''
+    def __init__(self, 
+                link: str, 
+                token: str, 
+                chapters: list[str], 
+                stopword: str,
+                connection_string: str,
+                chunk_size: int,
+                chunk_overlap: int,
+                db_name: str,
+                collection_name: str,
+                reset: bool = False,
+                model: str = 'gpt-4o-mini',
+                temp: int = 1):
         '''
         Constructor to create a large language model relation extractor class. 
 
@@ -26,16 +70,58 @@ class relationExtractor:
             token (str): OpenAI token
             chapters (list): list of chapter/section names in link
             stopword (str): word where last chapter ends (usually appendix or bibliography)
+            connection_string (str): connection string to MongoDB 
+            chunk_size (int): number of characters in a chunk of content
+            chunk_overlap (int): number characters to overlap between content chunks
+            db_name (str): name of MongoDB database
+            collection_name (str): collection name of MongoDB database
+            reset (bool, default False): if True, drop all documents from collection before adding new ones
+            model (str, default gpt-4o-mini): OpenAI model to use 
+            temp (int, default 1): temperature to use with OpenAI model
         '''
         self.link = link
         self.chapters = chapters
         self.stopword = stopword
   
         os.environ['OPENAI_API_KEY'] = token
-        self.llm = ChatOpenAI(temperature = 0)
+        self.llm = ChatOpenAI(model = model, max_tokens = None, temperature = temp)
 
-        create_retriever(self.link)
+        self.vs = RetrievalSystem(connection_string, self.link, chunk_size, chunk_overlap, db_name, collection_name, reset)
 
+    
+    def retrieval_pipeline(self, query: str, context: str, num_queries: int = 4, top_n: int = 4) -> list[Document]:
+        '''
+        Retrieval pipeline from original query
+
+        Args:
+            query (str): original prompt
+            context (str): (something)
+            num_queries (int, default 4): number of additional queries to generate
+            top_n (int, default 4): top n documents to return
+
+        Returns:
+            list[Document]: top_n documents
+        '''
+        q_prompt = f'''
+                    You are tasked with enhancing this {query} for a retrieval-augmented pipeline. Output {num_queries} additional queries.
+                    You can find relevant context here: {context}.
+
+                    Output Format:
+                    query_1::query_2::query_3::query_4...::query_{num_queries}
+                    '''
+        
+        queries = self.llm.invoke(q_prompt).content.split('::')
+
+        retrieved_docs = []
+        for q in queries:
+            q_docs = self.vs.invoke(q)
+
+            for doc in q_docs:
+                retrieved_docs.append((q, doc))
+
+        # rank and return top_n docs
+        return rank_docs(retrieved_docs, top_n = top_n)
+        
 
     def identify_key_terms(self, n_terms: int, input_type: str = 'chapter', chapter_name: str = None, concepts: list[list[str]] = None) -> list[str] | dict[str, list[str]]:
         '''
@@ -188,11 +274,12 @@ class relationExtractor:
         return topic_relations
 
     
-    def identify_outcomes(self, concepts: list[list[str]] = None, concepts_keyTerms: dict[str, list[str]] = None) -> list[list[str]] | dict[tuple[str, str], list[str]]:
+    def identify_outcomes(self, num_outcomes: int, concepts: list[list[str]] = None, concepts_keyTerms: dict[str, list[str]] = None) -> list[list[str]] | dict[tuple[str, str], list[str]]:
         '''
         Identify main learning outcomes within the class provided link. If concepts and concepts_KeyTerms are both None, get outcomes from web link content
 
         Args:
+            num_concepts (int): number of outcomes to generate
             concepts (list[list[str]]): list of concepts from identify_concepts()
             concepts_keyTerms (dict[str, list[str]]): dictionary of concepts and key_terms from identify_key_terms
             
@@ -201,61 +288,73 @@ class relationExtractor:
             dict[tuple[str, str], list[str]]: main concept and terms as key, list of outcomes as value
         '''
         outcome_list = []
+        retrieved_contexts = {}
+        # if concepts is None and concepts_keyTerms is None:
 
-        if concepts is None and concepts_keyTerms is None:
-            for name in self.chapters:
-                response = self.llm.invoke(f"Identify the main learning outcomes given this chapter: {name}. Here is the textbook in which to retrieve them: {self.link}").content
-                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
-
-            return outcome_list
+        for name in self.chapters:
+            prompt = f'Identify {num_outcomes} learning outcomes from chapter {name}.'
+            relevant_docs = self.retrieval_pipeline(prompt, self.link)
         
-        elif concepts is not None and concepts_keyTerms is None:
-            for concept in concepts:
-                concept = ' '.join(concept)
-                response = self.llm.invoke(f'Identify the main learning outcomes from these concepts: {concept}').content
-                outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+            # # single shot prompt 
+            single_prompt = f'''
+                            Identify the {num_outcomes} most important learning concepts for chapter: {name}. 
+                            The relevant context can be found here: {' '.join(t[0][1].page_content for t in relevant_docs)}
+                            '''
+
+            retrieved_contexts[name] = ''.join([t[0][1].page_content for t in relevant_docs])
+
+            response = self.llm.invoke(single_prompt).content
+
+            outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
+
+        return outcome_list, retrieved_contexts
+        
+        # elif concepts is not None and concepts_keyTerms is None:
+        #     for concept in concepts:
+        #         concept = ' '.join(concept)
+        #         response = self.llm.invoke(f'Identify the main learning outcomes from these concepts: {concept}').content
+        #         outcome_list.append([outcome for outcome in response.split('\n') if outcome != ''])
             
-            return outcome_list
+        #     return outcome_list
 
-        elif concepts is None and concepts_keyTerms is not None:
-            outcome_list = {}
-            for k in concepts_keyTerms.keys():
-                terms = ' '.join(concepts_keyTerms[k])
-                response = self.llm.invoke(f'Identify the main learning outcomes given this concept {k} and these key terms {terms}').content
+        # elif concepts is None and concepts_keyTerms is not None:
+        #     outcome_list = {}
+        #     for k in concepts_keyTerms.keys():
+        #         terms = ' '.join(concepts_keyTerms[k])
+        #         response = self.llm.invoke(f'Identify the main learning outcomes given this concept {k} and these key terms {terms}').content
 
-                outcome_list[(k, terms)] = [outcome for outcome in response.split('\n') if outcome != '']
+        #         outcome_list[(k, terms)] = [outcome for outcome in response.split('\n') if outcome != '']
 
-            return outcome_list
-        else:
-            raise ValueError(f'concepts and key_terms cannot both have a value. one of them must be None')
+        #     return outcome_list
+        # else:
+        #     raise ValueError(f'concepts and key_terms cannot both have a value. one of them must be None')
 
 
-    def identify_concepts(self) -> list[list[str]]:
+    def identify_concepts(self, num_concepts: int) -> list[list[str]]:
         '''
         Identify the main learning concepts within the class provided link
 
         Args:
-            None
+            num_concepts (int): number of concepts to get per chapter
         
         Returns:
             tuple[dict[str, str], list[list[str]]]: retrieved contexts and list of concepts for each chapter
         '''
-
         concept_list = []
         current_concept = ''
         retrieved_contexts = {}
 
         for name in self.chapters:
-
-            relevant_docs = invoke_retriever(f'Identify the ten most important learning concepts for chapter: {name}.')
+            prompt = f'Identify {num_concepts} learning concepts from chapter {name}.'
+            relevant_docs = self.retrieval_pipeline(prompt, self.link)
             
-            # single shot prompt 
+            # # single shot prompt 
             single_prompt = f'''
-                             Identify the ten most important learning concepts for chapter: {name}. 
-                             The relevant documents can be found here: {relevant_docs}
+                             Identify the {num_concepts} most important learning concepts for chapter: {name}. 
+                             The relevant context can be found here: {' '.join(t[0][1].page_content for t in relevant_docs)}
                              '''
 
-            retrieved_contexts[name] = ''.join([text.page_content for text in relevant_docs])
+            retrieved_contexts[name] = ''.join([t[0][1].page_content for t in relevant_docs])
 
             current_concept = self.llm.invoke(single_prompt).content
             concept_list.append([concept for concept in current_concept.split('\n') if concept != ''])
@@ -496,63 +595,61 @@ class relationExtractor:
         fig.show()
 
 
-    # TODO: function needs a lotta work
     def evaluate(self, 
                 type_eval: str, 
+                num_generated: int,
                 generated: list[list[str]] | dict[str, list[str]], 
                 ground_truth: list[str], 
                 data: list[list[str]] | dict[str, list[str]],
                 metrics: list = None, 
-                outcomes_from: str = None,
-                n_terms: int = None) -> list[SingleTurnSample]:
+                ) -> list[SingleTurnSample]:
         '''
         Evaluate concepts or outcomes generated from the large language model  
 
         Args:
-            type_eval (str): concepts to evaluate concepts, outcomes to evaluate outcomes, terms to evaluate key terms
+            type_eval (str): type of evaluation. 'concepts' to evaluate generated concepts, 'outcomes' to evaluate generated outcomes
+            num_generated (int): number of generated concepts or outcomes
             generated (list[list[str]] | dict[str, list[str]]): dictionary with chapter name as key and value as the list of concepts
             ground_truth (list): ground truth concepts 
             data (list[list[str]] | dict[str, list[str]]): data given to function that identifies terms, concepts, or outcomes
             metrics (list, default None): list of metrics to use from ragas library
-            outcomes_from (str, default None): where outcomes were retrieved from (chapters, concepts, or CKT if they were generated from concepts and key terms)
-            n_terms (int, default None): number of key terms generated per concept or chapter if evaluating key terms
 
         Returns:
             list[SingleTurnSample]: list of samples used for evaluation  
         '''      
         samples = []
-        if type_eval == 'outcomes' and outcomes_from is None:
-            raise ValueError(f'if evaluating outcomes, outcomes_from value cannot be None')
-
         if isinstance(data, dict):
             keys = list(data.keys())
 
         if isinstance(generated, dict):
             values = list(generated.values())
 
-
         for i in range(len(ground_truth)):
             if type_eval == 'concepts': # concepts always come from web chapters
-                prompt = f'Identify the most important learning {type_eval} for chapter: {self.chapters[i]}. The relevant documents can be found here: {data[keys[i]]}'            
+                prompt = f'Identify the {num_generated} most important learning concepts for chapter {self.chapters[i]}. The relevant context can be found here: {data[keys[i]]}.'            
                 retrieved = data[keys[i]]
 
-            elif type_eval == 'outcomes' and outcomes_from == 'concepts':
-                concept = ' '.join(data[i])
-                prompt = f'Identify the main learning {type_eval} from these concepts: {concept}'
-                retrieved = ' '.join(data[i])
+            elif type_eval == 'outcomes':
+                prompt = f'Identify the {num_generated} most important learning outcomes for chapter {self.chapters[i]}. The relevant context can be found here: {data[keys[i]]}.'
+                retrieved = data[keys[i]]
 
-            elif type_eval == 'outcomes' and outcomes_from == 'CKT':
-                terms = ' '.join(data[keys[i]])
-                prompt = f'Identify the main learning {type_eval} given these concepts {keys[i]} and these key terms {terms}'
-                retrieved = keys[i] + ' ' + terms
+            # elif type_eval == 'outcomes' and outcomes_from == 'concepts':
+            #     concept = ' '.join(data[i])
+            #     prompt = f'Identify the main learning {type_eval} from these concepts: {concept}'
+            #     retrieved = ' '.join(data[i])
+
+            # elif type_eval == 'outcomes' and outcomes_from == 'CKT':
+            #     terms = ' '.join(data[keys[i]])
+            #     prompt = f'Identify the main learning {type_eval} given these concepts {keys[i]} and these key terms {terms}'
+            #     retrieved = keys[i] + ' ' + terms
             
-            elif type_eval == 'terms':
-                concept = ' '.join(data[i])
-                prompt = f'Identify {n_terms} key terms for the following concept: {data[i]}.'
-                retrieved = ' '.join(data[i])
+            # elif type_eval == 'terms':
+            #     concept = ' '.join(data[i])
+            #     prompt = f'Identify {n_terms} key terms for the following concept: {data[i]}.'
+            #     retrieved = ' '.join(data[i])
             
-            else:
-                raise ValueError(f'invalid parameter arguments, check function description')
+            # else:
+            #     raise ValueError(f'invalid parameter arguments, check function description')
 
 
             samples.append(SingleTurnSample(
@@ -605,6 +702,7 @@ class relationExtractor:
         return terminology
 
 
+    # TODO
     def build_KG(self) -> nx.Graph:
         '''
         Builds a knowledge using learning concepts, outcomes, and key terms
@@ -619,5 +717,23 @@ class relationExtractor:
         '''
         kg = nx.Graph()
 
-
         return kg
+
+
+    # def generate_testset(self, size: int = 10) -> DataFrame:
+    #     '''
+    #     Generates a testset for evaluation based on given link
+
+    #     Args:
+    #         size (int, default 10): number of samples
+
+    #     Returns:
+    #         DataFrame: dataframe of samples
+    #     '''
+    #     gen = TestsetGenerator(LangchainLLMWrapper(self.llm), 
+    #                           LangchainEmbeddingsWrapper(TransformerEmbeddings()))
+
+    #     ds = gen.generate_with_langchain_docs(documents = self.vs.docs, testset_size = size)
+
+    #     return ds.to_pandas()
+    
