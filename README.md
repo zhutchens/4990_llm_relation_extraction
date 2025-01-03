@@ -12,7 +12,6 @@ Using conda:
 ```
 conda create -n env python=3.10.12 anaconda
 ```
-
 # Activation and package installation
 ## Activation
 ### Pip
